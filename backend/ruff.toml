@@ -1,0 +1,16 @@
+# Minimal lint configuration for the TaskFlow backend.
+# Intentionally small: catch real problems (undefined names, unused imports,
+# bad imports) without drowning in style noise. Tighten over time.
+
+target-version = "py312"
+line-length = 100
+
+[lint]
+# E/W: pycodestyle, F: pyflakes (real errors), I: import sorting.
+select = ["E", "W", "F", "I"]
+# E501 (line too long) is noisy and not worth blocking CI on right now.
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Migrations and Alembic scaffolding are largely generated.
+"alembic/*" = ["E", "W", "F", "I"]

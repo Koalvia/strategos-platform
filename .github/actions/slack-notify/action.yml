@@ -1,0 +1,34 @@
+name: "Slack notify"
+description: "Send a single message to a Slack Incoming Webhook. No-op if the webhook secret is empty."
+
+inputs:
+  webhook:
+    description: "Slack Incoming Webhook URL. Pass the secrets.SLACK_WEBHOOK_URL secret."
+    required: true
+  text:
+    description: "Message text to post (Slack mrkdwn is supported)."
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Post to Slack
+      shell: bash
+      env:
+        SLACK_WEBHOOK_URL: ${{ inputs.webhook }}
+        SLACK_TEXT: ${{ inputs.text }}
+      run: |
+        if [ -z "${SLACK_WEBHOOK_URL}" ]; then
+          echo "SLACK_WEBHOOK_URL is empty; skipping Slack notification."
+          exit 0
+        fi
+        # Build the JSON payload safely with jq so message content cannot break it.
+        payload="$(jq -n --arg text "${SLACK_TEXT}" '{text: $text}')"
+        status="$(curl -sS -o /dev/null -w '%{http_code}' \
+          -X POST -H 'Content-type: application/json' \
+          --data "${payload}" "${SLACK_WEBHOOK_URL}")"
+        echo "Slack responded with HTTP ${status}"
+        # Never fail the job just because the notification did not go through.
+        if [ "${status}" != "200" ]; then
+          echo "::warning::Slack notification failed (HTTP ${status})."
+        fi

@@ -1,0 +1,143 @@
+name: Agent - Implement
+
+# Triggered when the `auto` label is added to an issue.
+# The Implementer agent reads the issue, implements a scoped change, runs the
+# checks on the runner, opens a PR that closes the issue, and arms auto-merge.
+on:
+  issues:
+    types: [labeled]
+
+# Least privilege: enough to push a branch, comment on the issue, and open a PR.
+# It can never write to `main` (protected) and gets no other repository scopes.
+# `id-token: write` lets the Claude action mint its GitHub App token via OIDC.
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: agent-implement-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    name: implement
+    # Only run for the dedicated trigger label.
+    if: github.event.label.name == 'auto'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Notify Slack - started
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            :building_construction: *Implementer started* on issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
+            ${{ github.event.issue.html_url }}
+
+      # Provide the same toolchain as CI so the agent can actually run the checks
+      # it is told to run (ruff, pytest, pnpm). Without this, those commands would
+      # not exist on the runner.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Implementer agent
+        id: implement
+        uses: anthropics/claude-code-action@v1
+        env:
+          # Lets the agent arm auto-merge via `gh` using the job's scoped token.
+          GH_TOKEN: ${{ github.token }}
+          # Test env at the job level so the agent can run `python run_tests.py`
+          # directly. Previously it followed implementer.md and ran an env-prefixed
+          # command (`TESTING=1 ... python run_tests.py`) whose prefix is not
+          # `python`, so the Bash allowlist denied it and it burned turns retrying.
+          TESTING: "1"
+          DATABASE_URL: sqlite:///./test.db
+          SECRET_KEY: test-secret
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are the autonomous Implementer for this repository. Operate exactly as
+            specified in `.claude/agents/implementer.md` and follow `CLAUDE.md`.
+
+            Your task is the GitHub issue that triggered this run:
+            issue #${{ github.event.issue.number }}. Read that issue (title, body,
+            AND all comments) for the requirements. If any comment contains an
+            "Auto-retry N/3" failure report (posted by the auto-retry workflow),
+            treat it as a mandatory fix list: address every item in it before
+            opening a new PR.
+
+            Decision gate:
+            - If the issue is ambiguous, too large for one safe PR, or would need a
+              destructive change or a secret you cannot infer: DO NOT implement.
+              Post one clear comment on issue #${{ github.event.issue.number }} asking
+              for what you need, then stop.
+            - Otherwise: implement the minimal scoped change, add/update tests under
+              backend/tests/, run the checks on this runner (backend `ruff check .`
+              and the SQLite test suite; if you touched the frontend, `pnpm install
+              --frozen-lockfile`, `pnpm lint`, `pnpm build`), fix any failures, then
+              open a Pull Request whose body includes `Closes #${{ github.event.issue.number }}`.
+
+            After opening the PR, arm auto-merge so it merges once CI passes:
+            run `gh pr merge --auto --squash --delete-branch` on the PR you opened.
+
+            Write everything in English.
+          # The previous narrow Bash allowlist caused repeated permission denials
+          # (the agent burned turns on `cd`, `mkdir`, and the env-prefixed test
+          # command, then hit max-turns with permission_denials_count=12). The real
+          # security boundary is the ephemeral runner + a token scoped to `claude/*`
+          # branches (never `main`, which is protected) + no web tools — NOT a Bash
+          # allowlist, which is moot once `python`/`node` are allowed (arbitrary code
+          # anyway). So grant the file tools + Bash and keep web access disallowed.
+          claude_args: |
+            --model claude-opus-4-8
+            --max-turns 60
+            --permission-mode acceptEdits
+            --allowedTools "Edit,Write,Read,Glob,Grep,TodoWrite,Bash"
+            --disallowedTools "WebSearch,WebFetch"
+
+      - name: Notify Slack - success
+        if: success()
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            :white_check_mark: *Implementer finished* for issue #${{ github.event.issue.number }} — opened a PR or requested clarification. Check the issue/PR.
+            ${{ github.event.issue.html_url }}
+
+      - name: Notify Slack - failure
+        if: failure()
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            :x: *Implementer FAILED* for issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

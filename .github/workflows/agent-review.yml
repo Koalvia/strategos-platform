@@ -1,0 +1,141 @@
+name: Agent - Review
+
+# Triggered when a PR is opened or updated. The Reviewer agent reviews the diff,
+# posts inline comments, and emits a PASS/BLOCK verdict. This job is meant to be a
+# REQUIRED status check on `main`: a BLOCK verdict (or a reviewer error) fails the
+# job, which holds the PR's auto-merge. It is read-only on the repository code: it
+# can never push or modify `main`.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Least privilege: read the code, write only PR comments. NO `contents: write`, so
+# even a prompt-injection attempt in the diff cannot push code. The verdict is a
+# local file on the runner, never a repository write.
+# `id-token: write` lets the Claude action mint its GitHub App token via OIDC.
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+  id-token: write
+
+concurrency:
+  group: agent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: review
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Notify Slack - review started
+        if: github.event.action == 'opened'
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            :mag: *Review started* on PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}
+            ${{ github.event.pull_request.html_url }}
+
+      - name: Run Reviewer agent
+        id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # PRs in this pipeline are opened by the Implementer as `claude[bot]`. By
+          # default the action refuses bot-initiated events ("Workflow initiated by
+          # non-human actor"); allow our own bot so its PRs get reviewed. Scoped to
+          # `claude` rather than `*` to keep least privilege — the reviewer is already
+          # read-only (`contents: read`), so this only widens *who* it reviews.
+          allowed_bots: "claude"
+          # Force tag mode with a tracking comment so the review is posted on the PR.
+          track_progress: true
+          prompt: |
+            You are the read-only Reviewer for this repository. Operate exactly as
+            specified in `.claude/agents/reviewer.md` and check the change against
+            `CLAUDE.md`.
+
+            Review the diff of PR #${{ github.event.pull_request.number }} against the
+            base branch. Post specific, inline comments for correctness bugs, security
+            flaws, performance problems, and convention violations. Prominently flag
+            anything that could break `main` (prefix such comments with
+            `🚨 MAY BREAK MAIN:`). Do not edit source files, approve, or merge.
+            Write everything in English.
+
+            This review is a MERGE GATE. After reviewing, decide a single verdict and
+            make it your FINAL action — run exactly one of these shell commands, and
+            write nothing else to that file:
+              - `echo PASS > review-verdict.txt`  — the change is safe to merge
+                (no blocking issues; only nits/observations, if any).
+              - `echo BLOCK > review-verdict.txt` — there is at least one blocking
+                issue: a `🚨 MAY BREAK MAIN` item, a correctness bug, a security flaw,
+                or a must-fix convention violation (e.g. changed behavior with no
+                tests). When genuinely in doubt, choose BLOCK.
+            That verdict file is the ONLY file you may create; never edit repo source.
+          # Read/Glob/Grep let the reviewer read surrounding code for context
+          # (previously denied, since only the two Bash patterns were allowed). It
+          # stays strictly read-only: Edit/Write remain disallowed and the token is
+          # `contents: read`, so it can analyze and comment but never modify code.
+          # Bash is limited to git (diff) and echo (the PASS/BLOCK verdict file).
+          claude_args: |
+            --model claude-sonnet-4-6
+            --max-turns 20
+            --allowedTools "Read,Glob,Grep,TodoWrite,Bash(git:*),Bash(echo:*)"
+            --disallowedTools "Edit,Write,WebSearch,WebFetch"
+
+      # Turn the agent's verdict into the job's pass/fail status so it can gate the
+      # merge as a required check. Fail-closed: a missing verdict (agent crashed,
+      # timed out, or never wrote the file) blocks the merge rather than letting an
+      # unreviewed change through.
+      - name: Gate merge on review verdict
+        id: gate
+        if: always()
+        env:
+          AGENT_OUTCOME: ${{ steps.review.outcome }}
+        run: |
+          if [ ! -f review-verdict.txt ]; then
+            echo "verdict=ERROR" >> "$GITHUB_OUTPUT"
+            echo "::error::Reviewer produced no verdict (agent outcome: ${AGENT_OUTCOME}). Blocking merge (fail-closed)."
+            exit 1
+          fi
+          verdict="$(tr -d '[:space:]' < review-verdict.txt)"
+          echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
+          if [ "${verdict}" = "PASS" ]; then
+            echo "Review verdict: PASS — merge gate is green."
+            exit 0
+          fi
+          echo "::error::Review verdict: ${verdict} — blocking merge until the findings are addressed."
+          exit 1
+
+      - name: Notify Slack - review passed
+        if: ${{ !cancelled() && steps.gate.outputs.verdict == 'PASS' }}
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            :white_check_mark: *Review PASSED* on PR #${{ github.event.pull_request.number }} — merge gate is green.
+            ${{ github.event.pull_request.html_url }}
+
+      - name: Notify Slack - review blocked
+        if: ${{ !cancelled() && steps.gate.outputs.verdict == 'BLOCK' }}
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            :no_entry: *Review BLOCKED* PR #${{ github.event.pull_request.number }} — merge is held until the findings are addressed. See the review comments.
+            ${{ github.event.pull_request.html_url }}
+
+      - name: Notify Slack - reviewer errored
+        if: ${{ !cancelled() && steps.gate.outputs.verdict != 'PASS' && steps.gate.outputs.verdict != 'BLOCK' }}
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            :x: *Reviewer ERRORED* on PR #${{ github.event.pull_request.number }} — no verdict produced; merge blocked (fail-closed).
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

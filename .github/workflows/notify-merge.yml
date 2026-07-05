@@ -1,0 +1,26 @@
+name: Notify - PR merged
+
+# Fires when a PR is merged into its base branch (typically `main`).
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    name: notify-merge
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Notify Slack - merged
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            :rocket: *Merged* PR #${{ github.event.pull_request.number }} into `${{ github.event.pull_request.base.ref }}`: ${{ github.event.pull_request.title }}
+            ${{ github.event.pull_request.html_url }}
