@@ -25,9 +25,7 @@ config.set_main_option("sqlalchemy.url", database_url)
 
 # Import all models so Alembic can detect them
 import app.domains.auth.models
-import app.domains.lists.models
 import app.domains.api_clients.models
-import app.domains.tasks.models
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.db.base import Base
