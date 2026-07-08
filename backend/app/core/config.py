@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     SENTRY_TRACES_SAMPLE_RATE: float = 0.0
     SENTRY_PROFILES_SAMPLE_RATE: float = 0.0
 
+    # Business Central integration mode. "mock" serves committed fixtures with no
+    # network calls or credentials; a "live" client is not implemented yet.
+    BUSINESS_CENTRAL_MODE: str = "mock"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()

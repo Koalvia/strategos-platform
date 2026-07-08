@@ -1,0 +1,8 @@
+[
+  { "id": "usr-marc", "name": "Marc Solé", "role": "Soci Director", "email": "marc@estrategos.ad" },
+  { "id": "usr-anna", "name": "Anna Ferrer", "role": "Responsable Fiscal", "email": "anna@estrategos.ad" },
+  { "id": "usr-laura", "name": "Laura Puig", "role": "Responsable Laboral", "email": "laura@estrategos.ad" },
+  { "id": "usr-jordi", "name": "Jordi Vila", "role": "Tècnic Comptable", "email": "jordi@estrategos.ad" },
+  { "id": "usr-nuria", "name": "Núria Camps", "role": "Tècnica Administrativa", "email": "nuria@estrategos.ad" },
+  { "id": "usr-pol", "name": "Pol Ribas", "role": "Administració", "email": "pol@estrategos.ad" }
+]

@@ -1,0 +1,12 @@
+[
+  { "id": "obl-ccaa", "name": "Dipòsit de comptes (CCAA)", "periodicity": "anual" },
+  { "id": "obl-is", "name": "IS", "periodicity": "anual" },
+  { "id": "obl-irpf", "name": "IRPF", "periodicity": "trimestral" },
+  { "id": "obl-igi", "name": "IGI", "periodicity": "trimestral" },
+  { "id": "obl-irnr", "name": "IRNR", "periodicity": "trimestral" },
+  { "id": "obl-bon-iiea", "name": "Bonificació IIEA", "periodicity": "anual" },
+  { "id": "obl-bon-itp", "name": "Bonificació ITP/IGI", "periodicity": "anual" },
+  { "id": "obl-cass", "name": "Treballador per compte propi (CASS)", "periodicity": "mensual" },
+  { "id": "obl-factures", "name": "Generació de factures", "periodicity": "mensual" },
+  { "id": "obl-informes", "name": "Generació d'informes", "periodicity": "mensual" }
+]

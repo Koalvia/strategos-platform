@@ -1,0 +1,10 @@
+[
+  { "id": "cust-001", "name": "Fontaneria Puigcerdà SL", "nif": "A123456", "customer_type": "Societat", "responsible": "Marc Solé", "active_project_count": 2, "status": "Activo" },
+  { "id": "cust-002", "name": "Josep Martí", "nif": "F234567", "customer_type": "Persona física", "responsible": "Anna Ferrer", "active_project_count": 2, "status": "Activo" },
+  { "id": "cust-003", "name": "Hereus Casadevall", "nif": "J345678", "customer_type": "Indivís", "responsible": "Marc Solé", "active_project_count": 1, "status": "Activo" },
+  { "id": "cust-004", "name": "Comunitat Propietaris Escaldes", "nif": "Q456789", "customer_type": "Comunitat de béns", "responsible": "Laura Puig", "active_project_count": 1, "status": "Activo" },
+  { "id": "cust-005", "name": "Fundació Cultural Andorrana", "nif": "G567890", "customer_type": "Fundació", "responsible": "Anna Ferrer", "active_project_count": 1, "status": "Activo" },
+  { "id": "cust-006", "name": "Restaurant La Muntanya SL", "nif": "A678901", "customer_type": "Societat", "responsible": "Laura Puig", "active_project_count": 2, "status": "Activo" },
+  { "id": "cust-007", "name": "Immobiliària Pirineus SL", "nif": "A789012", "customer_type": "Societat", "responsible": "Marc Solé", "active_project_count": 2, "status": "Activo" },
+  { "id": "cust-008", "name": "Clínica Dental Ordino SL", "nif": "A890123", "customer_type": "Societat", "responsible": "Anna Ferrer", "active_project_count": 1, "status": "Inactivo" }
+]

@@ -1,0 +1,17 @@
+[
+  { "id": "task-001", "title": "Revisar model IS abans de presentar", "project_id": "proj-001", "assignee_id": "usr-marc", "status": "Pendiente", "priority": "Alta", "due_date": "2026-07-08" },
+  { "id": "task-002", "title": "Trucar client sobre bonificació ITP", "project_id": "proj-010", "assignee_id": "usr-marc", "status": "Pendiente", "priority": "Alta", "due_date": "2026-07-06" },
+  { "id": "task-003", "title": "Preparar dipòsit de comptes fundació", "project_id": "proj-007", "assignee_id": "usr-anna", "status": "Pendiente", "priority": "Media", "due_date": "2026-07-11" },
+  { "id": "task-004", "title": "Enviar informe semestral comunitat", "project_id": "proj-006", "assignee_id": "usr-laura", "status": "Pendiente", "priority": "Alta", "due_date": "2026-07-05" },
+  { "id": "task-005", "title": "Revisar nòmines juliol", "project_id": "proj-008", "assignee_id": "usr-laura", "status": "Pendiente", "priority": "Media", "due_date": "2026-07-10" },
+  { "id": "task-006", "title": "Presentar IRPF autònom", "project_id": "proj-003", "assignee_id": "usr-anna", "status": "Pendiente", "priority": "Alta", "due_date": "2026-07-09" },
+  { "id": "task-007", "title": "Preparar model IGI trimestral", "project_id": "proj-011", "assignee_id": "usr-nuria", "status": "Pendiente", "priority": "Media", "due_date": "2026-07-13" },
+  { "id": "task-008", "title": "Actualitzar dades cadastrals", "project_id": "proj-010", "assignee_id": "usr-jordi", "status": "Pendiente", "priority": "Baja", "due_date": "2026-07-15" },
+  { "id": "task-009", "title": "Revisar comptabilitat mensual restaurant", "project_id": "proj-008", "assignee_id": "usr-jordi", "status": "Pendiente", "priority": "Media", "due_date": "2026-07-12" },
+  { "id": "task-010", "title": "Preparar reunió trimestral client", "project_id": "proj-002", "assignee_id": "usr-nuria", "status": "Pendiente", "priority": "Baja", "due_date": "2026-07-14" },
+  { "id": "task-011", "title": "Validar IGI trimestral", "project_id": "proj-003", "assignee_id": "usr-anna", "status": "En curso", "priority": "Media", "due_date": "2026-07-09" },
+  { "id": "task-012", "title": "Conciliació comptable Q2", "project_id": "proj-001", "assignee_id": "usr-jordi", "status": "En curso", "priority": "Media", "due_date": "2026-07-07" },
+  { "id": "task-013", "title": "Arxivar documentació fundació", "project_id": "proj-007", "assignee_id": "usr-pol", "status": "En curso", "priority": "Baja", "due_date": "2026-07-09" },
+  { "id": "task-014", "title": "Signar informe herència", "project_id": "proj-005", "assignee_id": "usr-marc", "status": "Hecho", "priority": "Alta", "due_date": "2026-06-30" },
+  { "id": "task-015", "title": "Comprovar CASS treballadors", "project_id": "proj-009", "assignee_id": "usr-anna", "status": "Hecho", "priority": "Media", "due_date": "2026-06-28" }
+]

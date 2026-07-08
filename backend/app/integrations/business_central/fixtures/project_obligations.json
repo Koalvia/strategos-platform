@@ -1,0 +1,14 @@
+[
+  { "id": "pobl-001", "project_id": "proj-010", "obligation_id": "obl-bon-itp", "due_date": "2026-06-15", "status": "Vencido" },
+  { "id": "pobl-002", "project_id": "proj-007", "obligation_id": "obl-ccaa", "due_date": "2026-06-20", "status": "Vencido" },
+  { "id": "pobl-003", "project_id": "proj-012", "obligation_id": "obl-igi", "due_date": "2026-06-20", "status": "Vencido" },
+  { "id": "pobl-004", "project_id": "proj-003", "obligation_id": "obl-irpf", "due_date": "2026-06-25", "status": "Vencido" },
+  { "id": "pobl-005", "project_id": "proj-012", "obligation_id": "obl-factures", "due_date": "2026-06-30", "status": "Vencido" },
+  { "id": "pobl-006", "project_id": "proj-007", "obligation_id": "obl-factures", "due_date": "2026-07-05", "status": "Próximo" },
+  { "id": "pobl-007", "project_id": "proj-001", "obligation_id": "obl-ccaa", "due_date": "2026-07-10", "status": "Próximo" },
+  { "id": "pobl-008", "project_id": "proj-002", "obligation_id": "obl-factures", "due_date": "2026-07-05", "status": "Próximo" },
+  { "id": "pobl-009", "project_id": "proj-005", "obligation_id": "obl-irpf", "due_date": "2026-07-08", "status": "Próximo" },
+  { "id": "pobl-010", "project_id": "proj-006", "obligation_id": "obl-ccaa", "due_date": "2026-07-12", "status": "Próximo" },
+  { "id": "pobl-011", "project_id": "proj-008", "obligation_id": "obl-factures", "due_date": "2026-07-05", "status": "Próximo" },
+  { "id": "pobl-012", "project_id": "proj-009", "obligation_id": "obl-cass", "due_date": "2026-10-31", "status": "Pendiente" }
+]

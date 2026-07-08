@@ -1,0 +1,14 @@
+[
+  { "id": "proj-001", "name": "Assessorament fiscal i comptable", "customer_id": "cust-001", "project_type": "Iguala mensual", "entity_type": "Societat", "responsible": "Marc Solé", "technician": "Jordi Vila", "status": "Activo" },
+  { "id": "proj-002", "name": "Gestió laboral", "customer_id": "cust-001", "project_type": "Iguala mensual", "entity_type": "Societat", "responsible": "Marc Solé", "technician": "Núria Camps", "status": "Activo" },
+  { "id": "proj-003", "name": "Assessorament autònom", "customer_id": "cust-002", "project_type": "Iguala trimestral", "entity_type": "Persona física", "responsible": "Anna Ferrer", "technician": "Jordi Vila", "status": "Activo" },
+  { "id": "proj-004", "name": "Gestió IGI autònom", "customer_id": "cust-002", "project_type": "Iguala trimestral", "entity_type": "Persona física", "responsible": "Anna Ferrer", "technician": "Núria Camps", "status": "Activo" },
+  { "id": "proj-005", "name": "Herència i fiscalitat", "customer_id": "cust-003", "project_type": "Altres", "entity_type": "Indivís", "responsible": "Marc Solé", "technician": "Núria Camps", "status": "Activo" },
+  { "id": "proj-006", "name": "Gestió comunitat de propietaris", "customer_id": "cust-004", "project_type": "Iguala anual", "entity_type": "Comunitat de béns", "responsible": "Laura Puig", "technician": "Jordi Vila", "status": "Activo" },
+  { "id": "proj-007", "name": "Comptabilitat fundació", "customer_id": "cust-005", "project_type": "Iguala mensual", "entity_type": "Fundació", "responsible": "Anna Ferrer", "technician": "Núria Camps", "status": "Activo" },
+  { "id": "proj-008", "name": "Assessorament integral restaurant", "customer_id": "cust-006", "project_type": "Iguala mensual", "entity_type": "Societat", "responsible": "Laura Puig", "technician": "Jordi Vila", "status": "Activo" },
+  { "id": "proj-009", "name": "Nòmines i personal", "customer_id": "cust-006", "project_type": "Iguala mensual", "entity_type": "Societat", "responsible": "Laura Puig", "technician": "Núria Camps", "status": "Activo" },
+  { "id": "proj-010", "name": "Fiscalitat immobiliària", "customer_id": "cust-007", "project_type": "Iguala mensual", "entity_type": "Societat", "responsible": "Marc Solé", "technician": "Jordi Vila", "status": "Activo" },
+  { "id": "proj-011", "name": "Comptabilitat immobiliària", "customer_id": "cust-007", "project_type": "Iguala trimestral", "entity_type": "Societat", "responsible": "Marc Solé", "technician": "Núria Camps", "status": "Activo" },
+  { "id": "proj-012", "name": "Assessorament clínica", "customer_id": "cust-008", "project_type": "Iguala mensual", "entity_type": "Societat", "responsible": "Anna Ferrer", "technician": "Jordi Vila", "status": "Inactivo" }
+]
