@@ -64,6 +64,29 @@ export interface Task {
   updatedAt: string
 }
 
+// Customer status matches the Business Central vocabulary the backend returns.
+export type CustomerStatus = "Activo" | "Inactivo"
+
+// Backend API response type (from GET /api/v1/customers)
+export interface CustomerResponse {
+  name: string
+  nif: string
+  entity_type: string
+  responsible: string
+  project_count: number
+  status: CustomerStatus
+}
+
+// Frontend type (camelCase for easier use in components)
+export interface Customer {
+  name: string
+  nif: string
+  entityType: string
+  responsible: string
+  projectCount: number
+  status: CustomerStatus
+}
+
 export interface AuthResponse {
   success: boolean
   message?: string
@@ -90,6 +113,17 @@ export function transformListResponse(backendList: ListResponse): List {
     completedCount: backendList.completed_count,
     createdAt: backendList.created_at,
     updatedAt: backendList.updated_at,
+  }
+}
+
+export function transformCustomerResponse(backendCustomer: CustomerResponse): Customer {
+  return {
+    name: backendCustomer.name,
+    nif: backendCustomer.nif,
+    entityType: backendCustomer.entity_type,
+    responsible: backendCustomer.responsible,
+    projectCount: backendCustomer.project_count,
+    status: backendCustomer.status,
   }
 }
 

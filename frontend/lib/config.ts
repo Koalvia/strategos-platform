@@ -27,6 +27,9 @@ export const config = {
           base: "/api/v1/tasks",
           byId: (id: string) => `/api/v1/tasks/${id}`,
         },
+        customers: {
+          base: "/api/v1/customers",
+        },
       },
       // Frontend API routes (proxy to backend)
       auth: {
@@ -45,6 +48,9 @@ export const config = {
       tasks: {
         base: "/api/tasks",
         byId: (id: string) => `/api/tasks/${id}`,
+      },
+      customers: {
+        base: "/api/customers",
       },
     },
   },
