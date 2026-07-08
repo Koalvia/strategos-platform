@@ -33,6 +33,9 @@ export const config = {
           base: "/api/v1/obligations",
           catalog: "/api/v1/obligations/catalog",
         },
+        users: {
+          base: "/api/v1/users",
+        },
       },
       // Frontend API routes (proxy to backend)
       auth: {
@@ -55,6 +58,9 @@ export const config = {
       },
       obligations: {
         base: "/api/obligations",
+      },
+      users: {
+        base: "/api/users",
       },
     },
   },

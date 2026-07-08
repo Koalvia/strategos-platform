@@ -143,6 +143,25 @@ export interface ProjectObligation {
   status: ObligationStatus
 }
 
+// Users (Usuarios) directory. Identity stays local; the active-task count is
+// derived from Business Central. Field names mirror the Usuarios table columns.
+
+// Backend API response type (from GET /api/v1/users)
+export interface UserDirectoryResponse {
+  name: string
+  role: string | null
+  email: string
+  active_tasks: number
+}
+
+// Frontend type (camelCase for easier use in components)
+export interface UserDirectoryEntry {
+  name: string
+  role: string | null
+  email: string
+  activeTasks: number
+}
+
 export interface AuthResponse {
   success: boolean
   message?: string
@@ -197,6 +216,17 @@ export function transformProjectObligationResponse(
     dueDate: backendObligation.due_date,
     submissionDate: backendObligation.submission_date || undefined,
     status: backendObligation.status,
+  }
+}
+
+export function transformUserDirectoryResponse(
+  backendUser: UserDirectoryResponse,
+): UserDirectoryEntry {
+  return {
+    name: backendUser.name,
+    role: backendUser.role,
+    email: backendUser.email,
+    activeTasks: backendUser.active_tasks,
   }
 }
 
