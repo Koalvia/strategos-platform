@@ -6,6 +6,7 @@ from app.domains.customers.router import router as customers_router
 from app.domains.obligations.router import router as obligations_router
 from app.domains.projects.router import router as projects_router
 from app.domains.tasks.router import router as tasks_router
+from app.domains.users.router import router as users_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(health_router)
@@ -14,3 +15,4 @@ router.include_router(customers_router)
 router.include_router(projects_router)
 router.include_router(obligations_router)
 router.include_router(tasks_router)
+router.include_router(users_router)
