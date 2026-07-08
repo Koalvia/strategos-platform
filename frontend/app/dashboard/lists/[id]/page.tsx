@@ -36,7 +36,7 @@ function ListDetailContent() {
         setList(currentList)
       }
     } catch (error) {
-      console.error("[TaskFlow] Load data error:", error)
+      console.error("[Strategos] Load data error:", error)
       router.push("/dashboard")
     } finally {
       setLoading(false)
@@ -68,7 +68,7 @@ function ListDetailContent() {
             </Button>
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-6 w-6 text-primary" />
-              <span className="text-xl font-bold">TaskFlow</span>
+              <span className="text-xl font-bold">Strategos</span>
             </div>
           </div>
         </div>

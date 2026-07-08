@@ -30,7 +30,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       data: task,
     })
   } catch (error) {
-    console.error("[TaskFlow] Get task error:", error)
+    console.error("[Strategos] Get task error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(
@@ -90,7 +90,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       message: "Task updated successfully",
     })
   } catch (error) {
-    console.error("[TaskFlow] Update task error:", error)
+    console.error("[Strategos] Update task error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(
@@ -126,7 +126,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       message: result.message || "Task deleted successfully",
     })
   } catch (error) {
-    console.error("[TaskFlow] Delete task error:", error)
+    console.error("[Strategos] Delete task error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(

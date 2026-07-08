@@ -35,7 +35,7 @@ export function DeleteTaskDialog({ task, open, onOpenChange, onSuccess }: Delete
         onSuccess?.()
       }
     } catch (error) {
-      console.error("[TaskFlow] Delete task error:", error)
+      console.error("[Strategos] Delete task error:", error)
     } finally {
       setLoading(false)
     }

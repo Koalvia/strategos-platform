@@ -34,7 +34,7 @@ export default function DashboardPage() {
         setLists(listsResult.data)
       }
     } catch (error) {
-      console.error("[TaskFlow] Load data error:", error)
+      console.error("[Strategos] Load data error:", error)
       router.push("/login")
     } finally {
       setLoading(false)
@@ -66,7 +66,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-6 w-6 text-primary" />
-              <span className="text-xl font-bold">TaskFlow</span>
+              <span className="text-xl font-bold">Strategos</span>
             </div>
             <div className="flex items-center gap-4">
               <span className="text-sm text-muted-foreground">

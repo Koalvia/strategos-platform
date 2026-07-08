@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
     // Log verification token if present (for development)
     if (data.verification_token) {
-      console.log(`[TaskFlow] Verification token for ${email}: ${data.verification_token}`)
+      console.log(`[Strategos] Verification token for ${email}: ${data.verification_token}`)
     }
 
     return NextResponse.json({
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       user: data.user,
     })
   } catch (error) {
-    console.error("[TaskFlow] Registration error:", error)
+    console.error("[Strategos] Registration error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(

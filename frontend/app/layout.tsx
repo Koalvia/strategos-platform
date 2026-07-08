@@ -14,9 +14,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "TaskFlow - Modern TODO Platform",
+  title: "Strategos - Modern TODO Platform",
   description: "Professional task management platform with lists and todos",
-  generator: "v0.app",
 }
 
 export default function RootLayout({

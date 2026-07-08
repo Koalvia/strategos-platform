@@ -59,7 +59,7 @@ export function CreateTaskDialog({ listId, open, onOpenChange, onTaskCreated }: 
         onTaskCreated?.()
       }
     } catch (error) {
-      console.error("[TaskFlow] Create task error:", error)
+      console.error("[Strategos] Create task error:", error)
     } finally {
       setLoading(false)
     }

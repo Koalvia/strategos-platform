@@ -84,7 +84,7 @@ export default function RegisterPage() {
         <CardHeader className="space-y-1">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle2 className="h-6 w-6 text-primary" />
-            <CardTitle className="text-2xl font-bold">TaskFlow</CardTitle>
+            <CardTitle className="text-2xl font-bold">Strategos</CardTitle>
           </div>
           <CardDescription>Create an account to get started</CardDescription>
         </CardHeader>

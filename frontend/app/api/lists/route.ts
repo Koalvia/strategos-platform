@@ -28,7 +28,7 @@ export async function GET() {
       data: lists,
     })
   } catch (error) {
-    console.error("[TaskFlow] Get lists error:", error)
+    console.error("[Strategos] Get lists error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       message: "List created successfully",
     })
   } catch (error) {
-    console.error("[TaskFlow] Create list error:", error)
+    console.error("[Strategos] Create list error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(

@@ -9,7 +9,7 @@ export default function HomePage() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold">TaskFlow</span>
+            <span className="text-xl font-bold">Strategos</span>
           </div>
           <div className="flex items-center gap-4">
             <Button variant="ghost" asChild>
@@ -25,7 +25,7 @@ export default function HomePage() {
       <main>
         <section className="container mx-auto px-4 py-20 text-center">
           <h1 className="text-5xl font-bold mb-6 text-balance">
-            Organize your tasks with <span className="text-primary">TaskFlow</span>
+            Organize your tasks with <span className="text-primary">Strategos</span>
           </h1>
           <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto text-pretty">
             A modern, professional TODO platform that helps you manage your lists and tasks efficiently. Stay organized,
@@ -70,7 +70,7 @@ export default function HomePage() {
 
       <footer className="border-t mt-20">
         <div className="container mx-auto px-4 py-8 text-center text-muted-foreground">
-          <p>© 2025 TaskFlow. Built with Next.js and modern web technologies.</p>
+          <p>© 2025 Strategos. Built with Next.js and modern web technologies.</p>
         </div>
       </footer>
     </div>

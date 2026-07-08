@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       token: data.access_token,
     })
   } catch (error) {
-    console.error("[TaskFlow] Login error:", error)
+    console.error("[Strategos] Login error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(

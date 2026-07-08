@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       message: data.message || "Email verified successfully! You can now log in.",
     })
   } catch (error) {
-    console.error("[TaskFlow] Email verification error:", error)
+    console.error("[Strategos] Email verification error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(

@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       data: tasks,
     })
   } catch (error) {
-    console.error("[TaskFlow] Get tasks error:", error)
+    console.error("[Strategos] Get tasks error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
       message: "Task created successfully",
     })
   } catch (error) {
-    console.error("[TaskFlow] Create task error:", error)
+    console.error("[Strategos] Create task error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(

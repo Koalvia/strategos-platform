@@ -28,7 +28,7 @@ export async function GET() {
       user: data.user || data,
     })
   } catch (error) {
-    console.error("[TaskFlow] Get current user error:", error)
+    console.error("[Strategos] Get current user error:", error)
 
     if (error instanceof ApiError) {
       // If unauthorized, clear the cookie

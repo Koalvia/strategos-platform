@@ -29,7 +29,7 @@ export function TaskItem({ task }: TaskItemProps) {
     try {
       await updateTask(task.id, { completed: !task.completed })
     } catch (error) {
-      console.error("[TaskFlow] Toggle task error:", error)
+      console.error("[Strategos] Toggle task error:", error)
     }
   }
 

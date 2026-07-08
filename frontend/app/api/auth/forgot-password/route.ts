@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
     // Log reset token if present (for development)
     if (data.reset_token) {
-      console.log(`[TaskFlow] Password reset token for ${email}: ${data.reset_token}`)
+      console.log(`[Strategos] Password reset token for ${email}: ${data.reset_token}`)
     }
 
     return NextResponse.json({
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       message: data.message || "If an account exists with this email, a password reset link has been sent.",
     })
   } catch (error) {
-    console.error("[TaskFlow] Forgot password error:", error)
+    console.error("[Strategos] Forgot password error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(

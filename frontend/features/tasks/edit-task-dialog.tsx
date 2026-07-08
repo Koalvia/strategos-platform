@@ -56,7 +56,7 @@ export function EditTaskDialog({ task, open, onOpenChange, onTaskUpdated }: Edit
         onTaskUpdated?.()
       }
     } catch (error) {
-      console.error("[TaskFlow] Update task error:", error)
+      console.error("[Strategos] Update task error:", error)
     } finally {
       setLoading(false)
     }

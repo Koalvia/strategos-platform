@@ -1,6 +1,6 @@
 export const config = {
   app: {
-    name: "TaskFlow",
+    name: "Strategos",
     description: "Modern TODO list platform",
   },
   api: {

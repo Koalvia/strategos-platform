@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       message: data.message || "Password reset successfully! You can now log in with your new password.",
     })
   } catch (error) {
-    console.error("[TaskFlow] Reset password error:", error)
+    console.error("[Strategos] Reset password error:", error)
 
     if (error instanceof ApiError) {
       return NextResponse.json(

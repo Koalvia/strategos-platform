@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
       target: ${FRONTEND_BUILD_TARGET:-development}
     container_name: frontend
-    image: taskflow-frontend:latest
+    image: strategos-frontend:latest
     env_file:
       - .env
     environment:
@@ -40,14 +40,14 @@ services:
   #     context: ../backend
   #     dockerfile: Dockerfile
   #   container_name: api
-  #   image: taskflow-backend:latest
+  #   image: strategos-backend:latest
   #   command: ["/wait-for-postgres.sh", "db", "python", "start.py"]
   #   env_file:
   #     - ../backend/.env
   #   environment:
   #     - RUN_MIGRATIONS=1
   #     - REDIS_URL=redis://redis:6379/0
-  #     - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/taskflow_db
+  #     - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/strategos_db
   #     - INSTALL_DEPS_ON_START=${INSTALL_DEPS_ON_START:-0}
   #   ports:
   #     - "${API_PORT:-8000}:8000"
@@ -76,7 +76,7 @@ services:
   #   environment:
   #     POSTGRES_USER: ${POSTGRES_USER:-postgres}
   #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-  #     POSTGRES_DB: ${POSTGRES_DB:-taskflow_db}
+  #     POSTGRES_DB: ${POSTGRES_DB:-strategos_db}
   #   ports:
   #     - "${DB_PORT:-5432}:5432"
   #   volumes:
@@ -112,14 +112,14 @@ services:
   #   build:
   #     context: ../backend
   #     dockerfile: Dockerfile
-  #   image: taskflow-backend:latest
+  #   image: strategos-backend:latest
   #   container_name: worker
   #   command: celery -A app.celery_app.celery worker --loglevel=info
   #   env_file:
   #     - ../backend/.env
   #   environment:
   #     - REDIS_URL=redis://redis:6379/0
-  #     - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/taskflow_db
+  #     - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/strategos_db
   #   volumes:
   #     - ../backend:/app
   #     - pip_cache:/root/.cache/pip
@@ -148,4 +148,4 @@ networks:
     driver: bridge
     # To connect to root docker-compose network, uncomment and use:
     # external: true
-    # name: craze_dashboard_taskflow-network
+    # name: craze_dashboard_strategos-network
