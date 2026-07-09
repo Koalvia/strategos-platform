@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Copy application code and migrations
 COPY app /app/app
 COPY start.py /app/start.py
-COPY scripts/create_api_client.py /app/scripts/create_api_client.py
+COPY scripts /app/scripts
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic
 
