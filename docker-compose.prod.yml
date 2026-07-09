@@ -1,23 +1,166 @@
-# Production override file
-# Use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+# ─────────────────────────────────────────────────────────────────────────────
+# Producción — stack AUTOCONTENIDO (NO es un override de docker-compose.yml).
+#
+# Diferencias con docker-compose.yml (dev):
+#   - Usa imágenes prebuilt de GHCR (no hace build:).
+#   - No monta el código fuente (la imagen es self-contained).
+#   - NO publica puertos al host. Strategos trae su PROPIO Caddy interno
+#     (strategos-caddy, sin puertos): el Caddy/ingress EXTERNO del VPS (dueño del
+#     80/443, repo Koalvia/infra) le pasa el dominio por la red externa "proxy" ->
+#     strategos-caddy:80 -> frontend:3000. DB/Redis/API/Front son internos.
+#   - Lee secretos de los .env que VIVEN EN EL SERVIDOR (no se commitean).
+#
+# Uso (en el VPS, lo lanza el workflow de GitHub Actions):
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Variables de interpolación (las pone el CI por env, o el ./.env del servidor):
+#   BACKEND_IMAGE, FRONTEND_IMAGE   -> refs de GHCR (tienen default abajo)
+#   PROXY_NETWORK                   -> nombre de la red del Caddy de entrada (default: proxy)
+#   POSTGRES_USER / _PASSWORD / _DB -> credenciales de Postgres
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
+  # FastAPI Backend
+  api:
+    image: ${BACKEND_IMAGE:-ghcr.io/davidalonsobadia/strategos-platform-backend:latest}
+    container_name: strategos-api
+    command: ["/wait-for-postgres.sh", "db", "python", "start.py"]
+    env_file:
+      - ./backend/.env
+    environment:
+      - RUN_MIGRATIONS=1
+      - INSTALL_DEPS_ON_START=0
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-strategos_db}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - strategos-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; response = urllib.request.urlopen(\"http://localhost:8000/api/v1/health\"); exit(0 if response.status == 200 else 1)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Celery Worker
+  worker:
+    image: ${BACKEND_IMAGE:-ghcr.io/davidalonsobadia/strategos-platform-backend:latest}
+    container_name: strategos-worker
+    command: celery -A app.celery_app.celery worker --loglevel=info
+    env_file:
+      - ./backend/.env
+    environment:
+      - INSTALL_DEPS_ON_START=0
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-strategos_db}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - strategos-network
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery_app.celery inspect ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # Next.js Frontend (standalone "runner")
   frontend:
-    build:
-      target: runner
+    image: ${FRONTEND_IMAGE:-ghcr.io/davidalonsobadia/strategos-platform-frontend:latest}
+    container_name: strategos-frontend
+    env_file:
+      - ./frontend/.env
     environment:
       - NODE_ENV=production
-    volumes:
-      # Remove source code mounting for production
-      - /app/node_modules
-      - /app/.next
+      # El frontend (server-side) llega al backend por la red interna de docker.
+      # El navegador NUNCA habla con el backend directo: usa los route handlers del front.
+      # NEXT_PUBLIC_API_KEY (secreto) lo aporta ./frontend/.env (env_file), en runtime.
+      - NEXT_PUBLIC_API_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - strategos-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
 
-  api:
-    volumes:
-      # Remove source code mounting for production
-      - pip_cache:/root/.cache/pip
+  # Redis (broker de Celery) — interno
+  redis:
+    image: redis:7
+    container_name: strategos-redis
+    networks:
+      - strategos-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
 
-  worker:
+  # PostgreSQL — interno; persiste en el volumen pgdata
+  db:
+    image: postgres:15
+    container_name: strategos-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-strategos_db}
     volumes:
-      # Remove source code mounting for production
-      - pip_cache:/root/.cache/pip
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - strategos-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Caddy INTERNO de Strategos (sin puertos de host). El Caddy de entrada del VPS
+  # le pasa el dominio por la red "proxy":
+  #   strategos-platform.koalvia.com { reverse_proxy strategos-caddy:80 }
+  # El TLS lo termina el Caddy de entrada; aquí solo se enruta HTTP plano al frontend.
+  caddy:
+    image: caddy:latest
+    container_name: strategos-caddy
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    networks:
+      - strategos-network   # para llegar al frontend
+      - proxy                # para que el Caddy de entrada llegue a strategos-caddy:80
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  strategos-network:
+    driver: bridge
+  # Red EXTERNA ya existente en el VPS, donde vive el Caddy de entrada (Koalvia/infra,
+  # dueño del 80/443). strategos-caddy se cuelga de ella para que el Caddy de entrada
+  # lo alcance por "strategos-caddy:80".
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}

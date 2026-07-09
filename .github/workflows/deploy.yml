@@ -1,0 +1,145 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  DEPLOY_DIR: strategos-platform
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    environment: PROD
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # Checkout repo
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Ensure lowercase image name (GHCR requires lowercase)
+      - name: Set lowercase image name
+        run: |
+          echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      # Setup Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Login to GHCR (push)
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags for the backend image
+      - name: Backend metadata
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
+          tags: |
+            type=sha
+            type=raw,value=latest
+
+      # Build & push backend (FastAPI). No named target -> single stage.
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      # Tags for the frontend image
+      - name: Frontend metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
+          tags: |
+            type=sha
+            type=raw,value=latest
+
+      # Build & push frontend (Next.js standalone, "runner" stage)
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          target: runner
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      # Prepare deploy directory on the VPS
+      - name: Prepare VPS directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            mkdir -p ~/${{ env.DEPLOY_DIR }}/caddy
+
+      # Copy compose + internal Caddyfile (secrets/.env stay on the server)
+      - name: Copy deploy files to server
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "docker-compose.prod.yml,caddy/Caddyfile"
+          target: "~/${{ env.DEPLOY_DIR }}"
+
+      # Deploy via SSH
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: IMAGE_NAME,REGISTRY,DEPLOY_DIR
+          script: |
+            set -e
+
+            echo "Login to GHCR (pull)"
+            echo "${{ secrets.CR_PAT }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+            # Image refs come from CI (single source of truth); compose interpolates these.
+            export BACKEND_IMAGE="$REGISTRY/${IMAGE_NAME}-backend:latest"
+            export FRONTEND_IMAGE="$REGISTRY/${IMAGE_NAME}-frontend:latest"
+
+            cd ~/"$DEPLOY_DIR"
+
+            # The server-side .env files must already exist (created once, by hand):
+            #   ./.env            -> PROXY_NETWORK + POSTGRES_* (compose interpolation)
+            #   ./backend/.env    -> backend secrets (env_file)
+            #   ./frontend/.env   -> frontend secrets (env_file)
+            if [ ! -f .env ] || [ ! -f backend/.env ] || [ ! -f frontend/.env ]; then
+              echo "Missing .env files on the server (.env, backend/.env, frontend/.env). See docs/DEPLOY.md"
+              exit 1
+            fi
+
+            echo "Pulling images and (re)starting the stack"
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphans
+
+            echo "Pruning old images"
+            docker image prune -f
+
+            echo "Deployment finished"
