@@ -10,9 +10,9 @@
   --card-foreground: oklch(0.15 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.15 0 0);
-  /* Dark red primary color theme */
-  --primary: oklch(0.45 0.18 25);
-  --primary-foreground: oklch(0.98 0 0);
+  /* Strategos brand gold, matching the sidebar logo tile (#caa53d) */
+  --primary: #caa53d;
+  --primary-foreground: #0e1729;
   --secondary: oklch(0.96 0 0);
   --secondary-foreground: oklch(0.15 0 0);
   --muted: oklch(0.96 0 0);
@@ -23,7 +23,7 @@
   --destructive-foreground: oklch(0.98 0 0);
   --border: oklch(0.9 0 0);
   --input: oklch(0.9 0 0);
-  --ring: oklch(0.45 0.18 25);
+  --ring: #caa53d;
   --chart-1: oklch(0.45 0.18 25);
   --chart-2: oklch(0.6 0.15 35);
   --chart-3: oklch(0.35 0.12 20);
