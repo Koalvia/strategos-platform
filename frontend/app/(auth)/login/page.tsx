@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { authApi } from "@/features/auth/api"
-import { CheckCircle2 } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -40,12 +39,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+      <Card className="w-full max-w-md border-slate-200">
         <CardHeader className="space-y-1">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle2 className="h-6 w-6 text-primary" />
-            <CardTitle className="text-2xl font-bold">Strategos</CardTitle>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-[#caa53d] text-lg font-bold text-[#0e1729]">
+              E
+            </div>
+            <CardTitle className="text-2xl font-bold text-slate-900">Strategos</CardTitle>
           </div>
           <CardDescription>Sign in to your account to continue</CardDescription>
         </CardHeader>
