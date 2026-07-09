@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Strategos - Modern TODO Platform",
-  description: "Professional task management platform with lists and todos",
+  title: "Strategos - Plataforma interna",
+  description: "Gestión de clientes, proyectos y obligaciones para asesorías y gestorías",
 }
 
 export default function RootLayout({
@@ -24,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`dark ${geist.variable} ${geistMono.variable}`} >
+    <html lang="en" className={`${geist.variable} ${geistMono.variable}`} >
       <body className={`font-sans antialiased`}>
         {children}
         <Analytics />
