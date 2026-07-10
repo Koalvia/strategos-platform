@@ -10,7 +10,9 @@ confirmed BC payloads (no real Strategos client data / PII). They cover:
 * the ``blocked`` / ``partnerType`` / ``jobStatus`` field mappings, including the
   ``_x0020_`` blank-Option case;
 * the computed ``active_project_count``;
-* that the deferred entities raise ``NotImplementedError``.
+* the raw obligations / projectObligations mapping (only the fields BC actually
+  exposes today, the rest left unset);
+* that the still-deferred ``userTasks`` entity raises ``NotImplementedError``.
 """
 
 import httpx
@@ -19,7 +21,9 @@ import pytest
 from app.integrations.business_central.live_client import LiveBusinessCentralClient
 from app.integrations.business_central.models import (
     BCCustomer,
+    BCObligation,
     BCProject,
+    BCProjectObligation,
     BCUser,
     CustomerStatus,
     ProjectStatus,
@@ -66,18 +70,32 @@ def _build(
     customers_pages=None,
     projects=None,
     users=None,
+    obligations=None,
+    project_obligations=None,
     expires_in=3600,
     clock=None,
 ):
     """Build a live client wired to a MockTransport plus a request recorder.
 
     ``customers_pages`` is a list of pages (each a list of rows) so pagination can
-    be exercised; ``projects``/``users`` are single-page row lists.
+    be exercised; ``projects``/``users``/``obligations``/``project_obligations``
+    are single-page row lists.
     """
     customers_pages = customers_pages or [[]]
     projects = projects if projects is not None else []
     users = users if users is not None else []
-    calls = {"token": 0, "customers": 0, "projects": 0, "users": 0}
+    obligations = obligations if obligations is not None else []
+    project_obligations = (
+        project_obligations if project_obligations is not None else []
+    )
+    calls = {
+        "token": 0,
+        "customers": 0,
+        "projects": 0,
+        "users": 0,
+        "obligations": 0,
+        "projectObligations": 0,
+    }
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = request.url
@@ -112,6 +130,14 @@ def _build(
         if path.endswith("/users"):
             calls["users"] += 1
             return httpx.Response(200, json=_page(users))
+
+        if path.endswith("/projectObligations"):
+            calls["projectObligations"] += 1
+            return httpx.Response(200, json=_page(project_obligations))
+
+        if path.endswith("/obligations"):
+            calls["obligations"] += 1
+            return httpx.Response(200, json=_page(obligations))
 
         return httpx.Response(404, json={"error": f"unexpected path {path}"})
 
@@ -304,15 +330,60 @@ def test_user_field_mapping_with_email_fallback():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    "method",
-    ["get_obligations", "get_project_obligations", "get_user_tasks"],
-)
-def test_deferred_entities_raise_not_implemented(method):
-    """The excluded entities raise a clear NotImplementedError."""
+def test_obligation_catalog_mapping_leaves_missing_fields_unset():
+    """Obligations map ``code``/``description``; BC has no periodicity/rule yet."""
+    obligations = [
+        {"code": "IRPF", "description": "Impost sobre la renda"},
+        {"code": "IGI"},  # description absent -> empty name, still valid
+    ]
+    client, _ = _build(obligations=obligations)
+
+    result = client.get_obligations()
+    assert all(isinstance(o, BCObligation) for o in result)
+
+    irpf = result[0]
+    assert irpf.id == "IRPF"
+    assert irpf.code == "IRPF"
+    assert irpf.name == "Impost sobre la renda"
+    # Not provided by BC today -> left unset.
+    assert irpf.periodicity is None
+    assert irpf.due_date_rule is None
+
+    assert result[1].name == ""
+
+
+@pytest.mark.unit
+def test_project_obligation_link_mapping_leaves_missing_fields_unset():
+    """Project-obligation links map only ``systemId``/``jobNo``/``obligationCode``."""
+    project_obligations = [
+        {
+            "systemId": "aaaaaaaa-1111-2222-3333-444444444444",
+            "jobNo": "P00011",
+            "obligationCode": "IRPF",
+        }
+    ]
+    client, _ = _build(project_obligations=project_obligations)
+
+    result = client.get_project_obligations()
+    assert all(isinstance(i, BCProjectObligation) for i in result)
+
+    instance = result[0]
+    assert instance.id == "aaaaaaaa-1111-2222-3333-444444444444"
+    assert instance.project_id == "P00011"
+    assert instance.obligation_id == "IRPF"
+    # BC's real projectObligation carries none of these today -> left unset.
+    assert instance.subject is None
+    assert instance.due_date is None
+    assert instance.submission_date is None
+    assert instance.status is None
+
+
+@pytest.mark.unit
+def test_user_tasks_raise_not_implemented():
+    """userTasks stays deferred and raises a clear NotImplementedError."""
     client, _ = _build()
-    with pytest.raises(NotImplementedError, match=method):
-        getattr(client, method)()
+    with pytest.raises(NotImplementedError, match="get_user_tasks"):
+        client.get_user_tasks()
 
 
 @pytest.mark.unit

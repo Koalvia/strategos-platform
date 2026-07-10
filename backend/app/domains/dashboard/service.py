@@ -61,7 +61,8 @@ class DashboardService:
         tasks. ``proximas_obligaciones`` is the upcoming + overdue obligation
         instances across all projects (everything not "Al día"), and
         ``obligaciones_proximas`` counts just the ones due within the next
-        ``upcoming_within_days`` days.
+        ``upcoming_within_days`` days. Undated instances (``Sin fecha`` — no BC
+        due date yet) sit on neither list and are counted nowhere.
         """
         customers = self.customers.list_customers()
         clientes_activos = ActiveTotalKpi(
@@ -89,7 +90,10 @@ class DashboardService:
             upcoming_within_days=upcoming_within_days,
         )
         proximas_obligaciones = [
-            o for o in obligations if o.status is not DerivedObligationStatus.on_track
+            o
+            for o in obligations
+            if o.status
+            in (DerivedObligationStatus.overdue, DerivedObligationStatus.upcoming)
         ]
         obligaciones_proximas = CountKpi(
             count=sum(

@@ -5,12 +5,15 @@
 against BC's real REST API (Dynamics 365 Business Central, the Strategos custom
 API published by Becentis — see ``docs/postman/``).
 
-Only ``customers``, ``projects`` and ``users`` are wired up: their payloads are
-BC's native ``customer``/``project``/``user`` entities (~90 ERP fields each), so
-this client does the narrowing down to the transport DTOs. ``obligations``,
-``projectObligations`` and ``userTasks`` are intentionally left unimplemented
-(follow-up issue, plus a pending userTasks decision) and raise
-``NotImplementedError``.
+``customers``, ``projects``, ``users``, ``obligations`` and ``projectObligations``
+are wired up: their payloads are BC's native entities, so this client does the
+narrowing down to the transport DTOs. ``obligations``/``projectObligations`` are
+far thinner than the mock assumed — BC exposes only ``code``/``description`` for
+an obligation and only ``jobNo``/``obligationCode`` for a project link, so the
+richer fields (periodicity, due-date rule, subject, due/submission dates, status)
+are left unset (``None``) pending a BC-side field addition (email 2026-07-10).
+``userTasks`` is intentionally left unimplemented (a pending userTasks decision)
+and raises ``NotImplementedError``.
 
 Auth is OAuth2 client-credentials against Azure AD. The access token is cached in
 memory and only re-requested once it is close to expiry, so a burst of reads
@@ -51,8 +54,8 @@ _BLANK_OPTIONS = {"", "_x0020_"}
 
 _NOT_IMPLEMENTED_MSG = (
     "{method} is not implemented by the live Business Central client. "
-    "obligations/projectObligations/userTasks are excluded from this integration "
-    "(see the follow-up issue and the pending userTasks decision)."
+    "userTasks is excluded from this integration "
+    "(see the pending userTasks decision)."
 )
 
 
@@ -250,19 +253,46 @@ class LiveBusinessCentralClient(BusinessCentralClient):
             return ProjectStatus.inactive
         return ProjectStatus.active
 
+    def get_obligations(self) -> list[BCObligation]:
+        """Return the obligation catalog, mapped from BC's ``obligation`` entity.
+
+        BC only exposes ``code`` and ``description`` today, so ``periodicity`` and
+        ``due_date_rule`` are left unset (``None``) — see ``BCObligation``.
+        """
+        obligations: list[BCObligation] = []
+        for row in self._get_all("obligations"):
+            code = row["code"]
+            obligations.append(
+                BCObligation(
+                    id=code,
+                    code=code,
+                    name=row.get("description", ""),
+                )
+            )
+        return obligations
+
+    def get_project_obligations(self) -> list[BCProjectObligation]:
+        """Return project-obligation links from BC's ``projectObligation`` entity.
+
+        BC only links ``jobNo`` to ``obligationCode`` today, so ``subject``,
+        ``due_date``, ``submission_date`` and ``status`` are left unset (``None``)
+        — see ``BCProjectObligation``. Without a ``due_date`` the obligations
+        domain classifies every instance as "sin fecha".
+        """
+        instances: list[BCProjectObligation] = []
+        for row in self._get_all("projectObligations"):
+            instances.append(
+                BCProjectObligation(
+                    id=row["systemId"],
+                    project_id=row.get("jobNo", ""),
+                    obligation_id=row.get("obligationCode", ""),
+                )
+            )
+        return instances
+
     # -- Deferred entities ------------------------------------------------------
 
     def get_user_tasks(self) -> list[BCUserTask]:
         raise NotImplementedError(
             _NOT_IMPLEMENTED_MSG.format(method="get_user_tasks")
-        )
-
-    def get_obligations(self) -> list[BCObligation]:
-        raise NotImplementedError(
-            _NOT_IMPLEMENTED_MSG.format(method="get_obligations")
-        )
-
-    def get_project_obligations(self) -> list[BCProjectObligation]:
-        raise NotImplementedError(
-            _NOT_IMPLEMENTED_MSG.format(method="get_project_obligations")
         )

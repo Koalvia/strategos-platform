@@ -23,7 +23,16 @@ from fastapi.testclient import TestClient
 from app.db.session import get_db
 from app.domains.obligations.router import get_reference_date
 from app.domains.obligations.schemas import DerivedObligationStatus
-from app.domains.obligations.service import derive_status
+from app.domains.obligations.service import ObligationsService, derive_status
+from app.integrations.business_central.client import BusinessCentralClient
+from app.integrations.business_central.models import (
+    BCCustomer,
+    BCObligation,
+    BCProject,
+    BCProjectObligation,
+    CustomerStatus,
+    ProjectStatus,
+)
 from app.main import app
 
 CATALOG_URL = "/api/v1/obligations/catalog"
@@ -79,6 +88,17 @@ def test_derive_status_filed_is_on_track_even_if_past_due():
     """A filed instance is Al día regardless of how far past due it was."""
     status = derive_status(date(2026, 6, 15), date(2026, 6, 10), FROZEN_TODAY)
     assert status is DerivedObligationStatus.on_track
+
+
+@pytest.mark.unit
+def test_derive_status_undated_when_no_due_date():
+    """An instance without a due date is Sin fecha, never overdue/upcoming."""
+    assert derive_status(None, None, FROZEN_TODAY) is DerivedObligationStatus.undated
+    # A due-less instance is undated even if a submission date is somehow present.
+    assert (
+        derive_status(None, date(2026, 6, 10), FROZEN_TODAY)
+        is DerivedObligationStatus.undated
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -220,6 +240,103 @@ def test_invalid_status_is_rejected(client):
     """An unknown status value is rejected by validation (422)."""
     resp = client.get(OBLIGATIONS_URL, params={"status": "Bogus"})
     assert resp.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Live-shaped data: obligations / links with no dates (issue #40)
+# --------------------------------------------------------------------------- #
+
+
+class _LiveShapedBCClient(BusinessCentralClient):
+    """A stand-in BC client shaped like the real (thin) BC payloads.
+
+    Obligations expose only code/name (no periodicity/rule) and project-obligation
+    links carry no subject/dates/status — exactly what the live client returns
+    today, so we can exercise the ``due_date is None`` path without HTTP mocking.
+    """
+
+    def get_customers(self):
+        return [
+            BCCustomer(
+                id="C1",
+                name="Acme SL",
+                nif="A1",
+                customer_type="Company",
+                responsible="MS",
+                active_project_count=1,
+                status=CustomerStatus.active,
+            )
+        ]
+
+    def get_projects(self):
+        return [
+            BCProject(
+                id="P1",
+                name="Fiscal advisory",
+                customer_id="C1",
+                responsible="",
+                technician="",
+                status=ProjectStatus.active,
+            )
+        ]
+
+    def get_users(self):
+        return []
+
+    def get_user_tasks(self):
+        return []
+
+    def get_obligations(self):
+        return [BCObligation(id="IRPF", code="IRPF", name="IRPF")]
+
+    def get_project_obligations(self):
+        return [
+            BCProjectObligation(id="po-1", project_id="P1", obligation_id="IRPF")
+        ]
+
+
+@pytest.mark.unit
+def test_catalog_carries_none_periodicity_for_live_shaped_obligation():
+    """A live-shaped obligation surfaces with periodicity/rule as None."""
+    service = ObligationsService(db=None, bc_client=_LiveShapedBCClient())
+    catalog = service.list_catalog()
+    assert len(catalog) == 1
+    assert catalog[0].code == "IRPF"
+    assert catalog[0].periodicity is None
+    assert catalog[0].due_date_rule is None
+
+
+@pytest.mark.unit
+def test_undated_instance_does_not_crash_and_is_sin_fecha():
+    """A dateless link is mapped to Sin fecha, resolving its display names."""
+    service = ObligationsService(db=None, bc_client=_LiveShapedBCClient())
+    result = service.list_project_obligations(reference_date=FROZEN_TODAY)
+    assert len(result) == 1
+    row = result[0]
+    assert row.due_date is None
+    assert row.subject is None
+    assert row.status is DerivedObligationStatus.undated
+    # Display names still resolve from the catalog/project/customer.
+    assert row.obligation.name == "IRPF"
+    assert row.project.name == "Fiscal advisory"
+    assert row.client.name == "Acme SL"
+
+
+@pytest.mark.unit
+def test_undated_instances_excluded_from_date_bounded_filters():
+    """Undated instances never match a due_after / due_before bound."""
+    service = ObligationsService(db=None, bc_client=_LiveShapedBCClient())
+    assert service.list_project_obligations(
+        reference_date=FROZEN_TODAY, due_after=date(2020, 1, 1)
+    ) == []
+    assert service.list_project_obligations(
+        reference_date=FROZEN_TODAY, due_before=date(2030, 1, 1)
+    ) == []
+    # ...but a status filter for the undated bucket still returns them.
+    undated = service.list_project_obligations(
+        reference_date=FROZEN_TODAY, status=DerivedObligationStatus.undated
+    )
+    assert {r.id for r in undated} == {"po-1"}
 
 
 # --------------------------------------------------------------------------- #

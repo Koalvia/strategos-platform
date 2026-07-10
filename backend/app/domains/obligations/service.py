@@ -38,13 +38,17 @@ DEFAULT_UPCOMING_WINDOW_DAYS = 7
 
 
 def derive_status(
-    due_date: date,
+    due_date: date | None,
     submission_date: date | None,
     reference_date: date,
     upcoming_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
 ) -> DerivedObligationStatus:
     """Derive an obligation's due state relative to ``reference_date``.
 
+    * An instance with no ``due_date`` is ``Sin fecha`` (undated): it cannot be
+      placed on the calendar, so it is excluded from the overdue/upcoming/on-track
+      partitioning. The live BC ``projectObligation`` link carries no dates yet,
+      so today this is effectively every live instance (expected, not a bug).
     * A filed instance (``submission_date`` set) is always ``Al día``.
     * An unfiled instance whose ``due_date`` is before the reference date is
       ``Vencido`` (overdue).
@@ -52,6 +56,8 @@ def derive_status(
       reference date is ``Próximo`` (upcoming); the reference date itself counts.
     * Anything else (due further in the future) is ``Al día``.
     """
+    if due_date is None:
+        return DerivedObligationStatus.undated
     if submission_date is not None:
         return DerivedObligationStatus.on_track
     if due_date < reference_date:
@@ -94,7 +100,9 @@ class ObligationsService:
         ``status`` keeps only instances in that derived state; ``project_id``
         restricts to a single project; ``due_after`` / ``due_before`` bound the
         due date (both inclusive). Filters compose. Results are ordered by
-        ``due_date`` ascending.
+        ``due_date`` ascending, with undated (``due_date is None``) instances
+        sorted last. Undated instances never match a ``due_after`` / ``due_before``
+        bound.
         """
         obligations_by_id = {o.id: o for o in self.bc_client.get_obligations()}
         projects_by_id = {p.id: p for p in self.bc_client.get_projects()}
@@ -104,9 +112,15 @@ class ObligationsService:
         if project_id is not None:
             instances = [i for i in instances if i.project_id == project_id]
         if due_after is not None:
-            instances = [i for i in instances if i.due_date >= due_after]
+            instances = [
+                i for i in instances
+                if i.due_date is not None and i.due_date >= due_after
+            ]
         if due_before is not None:
-            instances = [i for i in instances if i.due_date <= due_before]
+            instances = [
+                i for i in instances
+                if i.due_date is not None and i.due_date <= due_before
+            ]
 
         responses = [
             self._to_response(
@@ -123,7 +137,8 @@ class ObligationsService:
         if status is not None:
             responses = [r for r in responses if r.status is status]
 
-        responses.sort(key=lambda r: r.due_date)
+        # Undated instances have no due date to sort on; keep them last.
+        responses.sort(key=lambda r: (r.due_date is None, r.due_date or date.min))
         return responses
 
     @staticmethod

@@ -140,13 +140,21 @@ class BCUserTask(BaseModel):
 
 
 class BCObligation(BaseModel):
-    """A catalog obligation type (BC ``GET /obligations``)."""
+    """A catalog obligation type (BC ``GET /obligations``).
+
+    Mapped from BC's native ``obligation`` entity by the live client, which today
+    only exposes ``code`` and ``description``. ``periodicity`` and
+    ``due_date_rule`` do **not** exist in the real BC schema yet (pending a
+    BC-side field addition — email to Maanan/Sergio, 2026-07-10), so the live
+    client leaves them unset (``None``). The mock client still populates them from
+    fixtures, so the fixture-backed catalog view is unaffected.
+    """
 
     id: str
     code: str
     name: str
-    periodicity: Periodicity
-    due_date_rule: str
+    periodicity: Periodicity | None = None
+    due_date_rule: str | None = None
 
 
 class BCProjectObligation(BaseModel):
@@ -157,12 +165,20 @@ class BCProjectObligation(BaseModel):
     The BC ``status`` field is the system-of-record label; Strategos re-derives
     its own due state from ``due_date``/``submission_date`` against a reference
     date in the obligations domain.
+
+    Today BC's real ``projectObligation`` entity only links ``jobNo`` to
+    ``obligationCode`` — it carries no ``subject``, ``due_date``,
+    ``submission_date`` or ``status``. Those are therefore optional and left
+    unset (``None``) by the live client until the fields land on the BC side
+    (pending, email 2026-07-10). The mock client still populates them from
+    fixtures, so the fixture-backed views (and the due-date calendar) are
+    unaffected.
     """
 
     id: str
     project_id: str
     obligation_id: str
-    subject: bool
-    due_date: date
+    subject: bool | None = None
+    due_date: date | None = None
     submission_date: date | None = None
-    status: ObligationStatus
+    status: ObligationStatus | None = None
