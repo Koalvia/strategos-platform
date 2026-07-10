@@ -1,0 +1,329 @@
+{
+  "info": {
+    "_postman_id": "a3f1c9e2-6b4d-4e8a-9c2f-2f6a1d5b8e10",
+    "name": "Strategos - Business Central API",
+    "description": "Business Central (Dynamics 365) custom API endpoints for the Strategos integration, as provided by Sergio Gayan (Becentis Consulting) over email between 2026-06-30 and 2026-07-08.\n\n**URL pattern**\n`https://api.businesscentral.dynamics.com/v2.0/{tenantId}/{bcEnvironment}/api/{publisher}/{group}/{version}/companies({companyId})/{entity}`\n\n- `tenantId` = e9cf8bf3-1d78-4f23-94f9-9a494d01dc4e\n- `bcEnvironment` = RESTSTR (sandbox/test, confirmed working) or PRODSTR (production, not yet validated with these credentials)\n- `publisher` = strategos (this replaces the generic \"craze\" placeholder from the base BC API)\n- `group` = integrations\n- `version` = v1.0\n- `companyId` = c88d2c0c-2a25-ef11-9f88-6045bddecfa1 (corrected value from Sergio's 2026-07-08 email; an earlier value, 8d69f51b-e5a1-eb11-9d03-00505627a590, was superseded)\n\n**Entities exposed** (per Sergio's 2026-06-30 email): customers, projects, users, userTasks, obligations, projectObligations.\n\n**Auth**: OAuth2 client credentials against Azure AD, configured at the collection level. Fill in `clientId` / `clientSecret` via a Postman *environment* (not committed here) — see the companion `Strategos-BC-Sandbox.postman_environment.json` file.\n\nSecurity note: this collection file itself carries no secrets and is safe to share/commit. The environment file with the real client_id/client_secret should NOT be committed to git or shared outside the team; rotate the secret if it ever leaks.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "oauth2",
+    "oauth2": [
+      { "key": "grant_type", "value": "client_credentials", "type": "string" },
+      { "key": "accessTokenUrl", "value": "https://login.microsoftonline.com/{{tenantId}}/oauth2/v2.0/token", "type": "string" },
+      { "key": "clientId", "value": "{{clientId}}", "type": "string" },
+      { "key": "clientSecret", "value": "{{clientSecret}}", "type": "string" },
+      { "key": "scope", "value": "https://api.businesscentral.dynamics.com/.default", "type": "string" },
+      { "key": "client_authentication", "value": "body", "type": "string" },
+      { "key": "addTokenTo", "value": "header", "type": "string" },
+      { "key": "tokenName", "value": "BC Access Token", "type": "string" },
+      { "key": "useBrowser", "value": false, "type": "boolean" }
+    ]
+  },
+  "variable": [
+    { "key": "tenantId", "value": "e9cf8bf3-1d78-4f23-94f9-9a494d01dc4e", "type": "string" },
+    { "key": "bcEnvironment", "value": "RESTSTR", "type": "string", "description": "RESTSTR = sandbox/test (confirmed). PRODSTR = production." },
+    { "key": "publisher", "value": "strategos", "type": "string" },
+    { "key": "group", "value": "integrations", "type": "string" },
+    { "key": "version", "value": "v1.0", "type": "string" },
+    { "key": "companyId", "value": "c88d2c0c-2a25-ef11-9f88-6045bddecfa1", "type": "string" },
+    { "key": "baseUrl", "value": "https://api.businesscentral.dynamics.com/v2.0/{{tenantId}}/{{bcEnvironment}}/api/{{publisher}}/{{group}}/{{version}}/companies({{companyId}})", "type": "string" },
+    { "key": "servicesUrl", "value": "https://api.businesscentral.dynamics.com/v2.0/{{tenantId}}/{{bcEnvironment}}/api/{{publisher}}/{{group}}/{{version}}", "type": "string", "description": "Same base as baseUrl but without the companies(...) segment — used for $metadata, which is company-agnostic." },
+    { "key": "clientId", "value": "", "type": "string", "description": "Set via environment, not here." },
+    { "key": "clientSecret", "value": "", "type": "string", "description": "Set via environment, not here." },
+    { "key": "customerId", "value": "", "type": "string" },
+    { "key": "projectId", "value": "", "type": "string" },
+    { "key": "userId", "value": "", "type": "string" },
+    { "key": "userTaskId", "value": "", "type": "string" },
+    { "key": "obligationId", "value": "", "type": "string" },
+    { "key": "projectObligationId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Metadata",
+      "description": "Company-agnostic OData schema (CSDL/XML). Lists every EntityType and its Properties even when the entity set has zero rows — use it when an entity (e.g. userTasks) comes back empty and you need its field names.",
+      "item": [
+        {
+          "name": "Get $metadata",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/xml" }],
+            "url": {
+              "raw": "{{servicesUrl}}/$metadata",
+              "host": ["{{servicesUrl}}"],
+              "path": ["$metadata"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth (manual token request, optional)",
+      "description": "Not required for the requests below (they use the collection-level OAuth2 config and Postman's own token cache). Kept here for debugging / curl reference.",
+      "item": [
+        {
+          "name": "Get Access Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "client_credentials", "type": "text" },
+                { "key": "client_id", "value": "{{clientId}}", "type": "text" },
+                { "key": "client_secret", "value": "{{clientSecret}}", "type": "text" },
+                { "key": "scope", "value": "https://api.businesscentral.dynamics.com/.default", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "https://login.microsoftonline.com/{{tenantId}}/oauth2/v2.0/token",
+              "protocol": "https",
+              "host": ["login", "microsoftonline", "com"],
+              "path": ["{{tenantId}}", "oauth2", "v2.0", "token"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('manual_access_token', json.access_token);",
+                  "  console.log('Token stored in {{manual_access_token}} (expires in ' + json.expires_in + 's)');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/customers?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["customers"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Customer by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/customers({{customerId}})",
+              "host": ["{{baseUrl}}"],
+              "path": ["customers({{customerId}})"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        {
+          "name": "List Projects",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/projects?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Project by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/projects({{projectId}})",
+              "host": ["{{baseUrl}}"],
+              "path": ["projects({{projectId}})"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/users?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/users({{userId}})",
+              "host": ["{{baseUrl}}"],
+              "path": ["users({{userId}})"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Tasks",
+      "item": [
+        {
+          "name": "List User Tasks",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/userTasks?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["userTasks"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Task by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/userTasks({{userTaskId}})",
+              "host": ["{{baseUrl}}"],
+              "path": ["userTasks({{userTaskId}})"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Obligations",
+      "item": [
+        {
+          "name": "List Obligations",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/obligations?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["obligations"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Obligation by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/obligations({{obligationId}})",
+              "host": ["{{baseUrl}}"],
+              "path": ["obligations({{obligationId}})"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Project Obligations",
+      "item": [
+        {
+          "name": "List Project Obligations",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/projectObligations?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["projectObligations"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Project Obligation by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/projectObligations({{projectObligationId}})",
+              "host": ["{{baseUrl}}"],
+              "path": ["projectObligations({{projectObligationId}})"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
