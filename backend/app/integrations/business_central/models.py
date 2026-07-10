@@ -64,7 +64,17 @@ class Periodicity(str, Enum):
 
 
 class BCCustomer(BaseModel):
-    """A customer of the advisory firm (BC ``GET /customers``)."""
+    """A customer of the advisory firm (BC ``GET /customers``).
+
+    Mapped from BC's native ``customer`` entity by the live client. A few fields
+    are approximations of the original curated concept, kept as free-form strings
+    because the real ERP payload is coarser than first assumed:
+
+    * ``customer_type`` comes from BC ``partnerType`` (only ``Company``/``Person``/
+      blank), not the finer Societat/Persona física/Indivís/... categories.
+    * ``responsible`` is the raw BC ``salespersonCode``, not a resolved person name
+      (no code→name lookup table exists yet).
+    """
 
     id: str
     name: str
@@ -76,27 +86,44 @@ class BCCustomer(BaseModel):
 
 
 class BCProject(BaseModel):
-    """A project delivered for a customer (BC ``GET /projects``)."""
+    """A project delivered for a customer (BC ``GET /projects``).
+
+    Mapped from BC's native ``project`` (Job) entity by the live client.
+    ``responsible`` (``personResponsible``) and ``technician`` (``projectManager``)
+    are real BC fields that happen to be empty in the current data — they are not
+    unavailable.
+
+    ``project_type``, ``entity_type``, ``has_certificate``, ``certificate_expiry``
+    and ``filing_date`` do **not** exist anywhere in the BC schema, so the live
+    client leaves them unset (``None``); they are optional here rather than guessed
+    from ``description`` string patterns. Tracked as a pending BC-side field
+    addition (email to Sergio, 2026-07-10). The mock client still populates them
+    from fixtures, so the fixture-backed views are unaffected.
+    """
 
     id: str
     name: str
     customer_id: str
-    project_type: str
-    entity_type: str
+    project_type: str | None = None
+    entity_type: str | None = None
     responsible: str
     technician: str
-    has_certificate: bool
+    has_certificate: bool | None = None
     certificate_expiry: date | None = None
     filing_date: date | None = None
     status: ProjectStatus
 
 
 class BCUser(BaseModel):
-    """An internal staff member (BC ``GET /users``)."""
+    """An internal staff member (BC ``GET /users``).
+
+    Mapped from BC's native ``user`` entity. There is deliberately no ``role``
+    field: the users directory sources role from the local ``auth.User.role``
+    column, never from BC (see ``app.domains.users.service``).
+    """
 
     id: str
     name: str
-    role: str
     email: str
 
 

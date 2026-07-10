@@ -67,20 +67,25 @@ def test_get_customers_count_type_and_active_split(client):
 
 
 @pytest.mark.unit
-def test_get_users_count_type_and_roles(client):
-    """6 users with the agreed roles."""
+def test_get_users_count_type_and_emails(client):
+    """6 users, all typed, keyed by the agreed emails.
+
+    ``BCUser`` has no ``role`` field: role comes from the local ``auth.User``
+    row, never from Business Central (see ``app.domains.users.service``).
+    """
     users = client.get_users()
     assert len(users) == 6
     assert all(isinstance(u, BCUser) for u in users)
+    assert not hasattr(BCUser, "role") and "role" not in BCUser.model_fields
 
-    roles = {u.name: u.role for u in users}
-    assert roles == {
-        "Marc Solé": "Soci Director",
-        "Anna Ferrer": "Responsable Fiscal",
-        "Laura Puig": "Responsable Laboral",
-        "Jordi Vila": "Tècnic Comptable",
-        "Núria Camps": "Tècnica Administrativa",
-        "Pol Ribas": "Administració",
+    names = {u.name for u in users}
+    assert names == {
+        "Marc Solé",
+        "Anna Ferrer",
+        "Laura Puig",
+        "Jordi Vila",
+        "Núria Camps",
+        "Pol Ribas",
     }
     assert all(u.email.endswith("@estrategos.ad") for u in users)
 
@@ -213,6 +218,24 @@ def test_di_provider_returns_mock_in_mock_mode():
 @pytest.mark.unit
 def test_di_provider_rejects_unknown_mode(monkeypatch):
     """An unsupported mode fails loudly rather than silently misbehaving."""
-    monkeypatch.setattr(settings, "BUSINESS_CENTRAL_MODE", "live")
+    monkeypatch.setattr(settings, "BUSINESS_CENTRAL_MODE", "bogus")
     with pytest.raises(RuntimeError):
         get_business_central_client()
+
+
+@pytest.mark.unit
+def test_di_provider_returns_live_in_live_mode(monkeypatch):
+    """The DI provider returns the live client when mode is 'live'."""
+    from app.core.dependencies import _live_business_central_client
+    from app.integrations.business_central import LiveBusinessCentralClient
+
+    _live_business_central_client.cache_clear()
+    monkeypatch.setattr(settings, "BUSINESS_CENTRAL_MODE", "live")
+    try:
+        provided = get_business_central_client()
+        assert isinstance(provided, LiveBusinessCentralClient)
+        assert isinstance(provided, BusinessCentralClient)
+        # Cached: the same instance is reused across requests.
+        assert get_business_central_client() is provided
+    finally:
+        _live_business_central_client.cache_clear()

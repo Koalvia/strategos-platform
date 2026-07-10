@@ -31,9 +31,24 @@ class Settings(BaseSettings):
     SENTRY_TRACES_SAMPLE_RATE: float = 0.0
     SENTRY_PROFILES_SAMPLE_RATE: float = 0.0
 
-    # Business Central integration mode. "mock" serves committed fixtures with no
-    # network calls or credentials; a "live" client is not implemented yet.
+    # Business Central integration mode. "mock" (default) serves committed
+    # fixtures with no network calls or credentials; "live" talks to the real
+    # Business Central REST API using the BC_* settings below.
     BUSINESS_CENTRAL_MODE: str = "mock"
+
+    # Business Central live-client connection settings. Only consulted when
+    # BUSINESS_CENTRAL_MODE="live". Tenant/company IDs and credentials are blank
+    # by default and MUST come from the environment (.env, git-ignored) — never
+    # commit real values. Publisher/group/version/environment carry the confirmed
+    # non-secret defaults for the Strategos custom API (see docs/postman/).
+    BC_TENANT_ID: str = ""
+    BC_ENVIRONMENT: str = "RESTSTR"
+    BC_COMPANY_ID: str = ""
+    BC_CLIENT_ID: str = ""
+    BC_CLIENT_SECRET: str = ""
+    BC_PUBLISHER: str = "strategos"
+    BC_API_GROUP: str = "integrations"
+    BC_API_VERSION: str = "v1.0"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
