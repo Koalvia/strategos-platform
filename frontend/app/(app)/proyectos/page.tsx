@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -37,28 +38,31 @@ export default function ProyectosPage() {
   const [projectType, setProjectType] = useState(ALL)
   const [entityType, setEntityType] = useState(ALL)
   const [projects, setProjects] = useState<Project[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [nextObligations, setNextObligations] = useState<
     Record<string, ProjectObligation>
   >({})
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
 
-  // Filter dropdown options come from a one-time unfiltered fetch so narrowing
-  // the grid never shrinks the option lists.
-  const [allProjects, setAllProjects] = useState<Project[]>([])
-
+  // Filter dropdown options are derived from whatever projects have loaded so
+  // far rather than a separate full fetch: project_type/entity_type have no
+  // live BC source yet (see BCProject), so live mode's options are always
+  // empty regardless of how much is scanned, and the mock fixture set
+  // comfortably fits within one page, so this stays exhaustive there too.
   const projectTypeOptions = useMemo(
     () =>
       Array.from(
-        new Set(allProjects.map((p) => p.projectType).filter((v): v is string => !!v)),
+        new Set(projects.map((p) => p.projectType).filter((v): v is string => !!v)),
       ).sort(),
-    [allProjects],
+    [projects],
   )
   const entityTypeOptions = useMemo(
     () =>
       Array.from(
-        new Set(allProjects.map((p) => p.entityType).filter((v): v is string => !!v)),
+        new Set(projects.map((p) => p.entityType).filter((v): v is string => !!v)),
       ).sort(),
-    [allProjects],
+    [projects],
   )
 
   // Debounce the search term so typing doesn't hit the backend on every keystroke.
@@ -68,36 +72,29 @@ export default function ProyectosPage() {
     return () => clearTimeout(handle)
   }, [search])
 
-  // Load the obligations once and the full project list for the filter options.
+  // Load the obligations once (used for each card's "Próx: ..." line).
   useEffect(() => {
     let active = true
 
-    const loadOnce = async () => {
+    const loadObligations = async () => {
       try {
-        const [obligationsResult, projectsResult] = await Promise.all([
-          projectsApi.getObligations(),
-          projectsApi.getProjects(),
-        ])
+        const result = await projectsApi.getObligations()
         if (!active) return
         setNextObligations(
-          obligationsResult.success && obligationsResult.data
-            ? buildNextObligations(obligationsResult.data)
-            : {},
-        )
-        setAllProjects(
-          projectsResult.success && projectsResult.data ? projectsResult.data : [],
+          result.success && result.data ? buildNextObligations(result.data) : {},
         )
       } catch (error) {
-        console.error("[Strategos] Load projects metadata error:", error)
+        console.error("[Strategos] Load obligations error:", error)
       }
     }
 
-    loadOnce()
+    loadObligations()
     return () => {
       active = false
     }
   }, [])
 
+  // Whenever the search/filter dropdowns change, restart pagination from page 1.
   useEffect(() => {
     let active = true
 
@@ -110,10 +107,19 @@ export default function ProyectosPage() {
           entityType: entityType === ALL ? undefined : entityType,
         })
         if (!active) return
-        setProjects(result.success && result.data ? result.data : [])
+        if (result.success && result.data) {
+          setProjects(result.data.items)
+          setNextCursor(result.data.nextCursor)
+        } else {
+          setProjects([])
+          setNextCursor(null)
+        }
       } catch (error) {
         console.error("[Strategos] Load projects error:", error)
-        if (active) setProjects([])
+        if (active) {
+          setProjects([])
+          setNextCursor(null)
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -124,6 +130,27 @@ export default function ProyectosPage() {
       active = false
     }
   }, [debouncedSearch, projectType, entityType])
+
+  const handleLoadMore = async () => {
+    if (!nextCursor) return
+    setLoadingMore(true)
+    try {
+      const result = await projectsApi.getProjects({
+        search: debouncedSearch || undefined,
+        projectType: projectType === ALL ? undefined : projectType,
+        entityType: entityType === ALL ? undefined : entityType,
+        cursor: nextCursor,
+      })
+      if (result.success && result.data) {
+        setProjects((prev) => [...prev, ...result.data!.items])
+        setNextCursor(result.data.nextCursor)
+      }
+    } catch (error) {
+      console.error("[Strategos] Load more projects error:", error)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   return (
     <div className="px-8 py-8">
@@ -172,6 +199,14 @@ export default function ProyectosPage() {
           loading={loading}
         />
       </div>
+
+      {!loading && nextCursor && (
+        <div className="mt-4 flex justify-center">
+          <Button variant="outline" onClick={handleLoadMore} disabled={loadingMore}>
+            {loadingMore ? "Cargando..." : "Cargar más"}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

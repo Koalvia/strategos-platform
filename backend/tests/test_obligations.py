@@ -31,6 +31,7 @@ from app.integrations.business_central.models import (
     BCObligation,
     BCProject,
     BCProjectObligation,
+    BCProjectPage,
     CustomerStatus,
     ProjectStatus,
 )
@@ -283,6 +284,13 @@ class _LiveShapedBCClient(BusinessCentralClient):
                 status=ProjectStatus.active,
             )
         ]
+
+    def get_projects_page(self, **kwargs):
+        return BCProjectPage(items=self.get_projects(), next_cursor=None)
+
+    def get_customer_names(self, customer_ids):
+        wanted = set(customer_ids)
+        return {c.id: c.name for c in self.get_customers() if c.id in wanted}
 
     def get_users(self):
         return []

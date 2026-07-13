@@ -24,6 +24,7 @@ from app.integrations.business_central.models import (
     BCCustomer,
     BCCustomerPage,
     BCProject,
+    BCProjectPage,
     CustomerStatus,
     ProjectStatus,
 )
@@ -33,11 +34,34 @@ PROJECTS_URL = "/api/v1/projects"
 
 
 @pytest.mark.integration
-def test_list_returns_all_twelve_projects(client):
-    """The list returns every mock project (~12)."""
+def test_list_returns_all_twelve_projects_on_one_page(client):
+    """The default page size comfortably fits all 12 mock projects in one page."""
     resp = client.get(PROJECTS_URL)
     assert resp.status_code == 200
-    assert len(resp.json()) == 12
+    body = resp.json()
+    assert len(body["items"]) == 12
+    assert body["next_cursor"] is None
+
+
+@pytest.mark.integration
+def test_page_size_paginates_across_requests(client):
+    """?page_size= caps a page; ?cursor= continues from ``next_cursor``."""
+    first = client.get(PROJECTS_URL, params={"page_size": 5})
+    assert first.status_code == 200
+    first_body = first.json()
+    assert len(first_body["items"]) == 5
+    assert first_body["next_cursor"] is not None
+
+    second = client.get(
+        PROJECTS_URL, params={"page_size": 5, "cursor": first_body["next_cursor"]}
+    )
+    assert second.status_code == 200
+    second_body = second.json()
+    assert len(second_body["items"]) == 5
+
+    first_ids = {p["id"] for p in first_body["items"]}
+    second_ids = {p["id"] for p in second_body["items"]}
+    assert first_ids.isdisjoint(second_ids)
 
 
 @pytest.mark.integration
@@ -45,7 +69,7 @@ def test_response_fields_match_general_fitxa(client):
     """Each project exposes the fitxa General fields, customer resolved to name."""
     resp = client.get(PROJECTS_URL)
     assert resp.status_code == 200
-    row = next(p for p in resp.json() if p["id"] == "proj-001")
+    row = next(p for p in resp.json()["items"] if p["id"] == "proj-001")
     assert set(row) == {
         "id",
         "name",
@@ -79,7 +103,7 @@ def test_nullable_certificate_and_filing_date(client):
     """A project without a certificate exposes null expiry (and null filing date)."""
     resp = client.get(PROJECTS_URL)
     assert resp.status_code == 200
-    row = next(p for p in resp.json() if p["id"] == "proj-005")
+    row = next(p for p in resp.json()["items"] if p["id"] == "proj-005")
     assert row["has_certificate"] is False
     assert row["certificate_expiry"] is None
     assert row["filing_date"] is None
@@ -91,7 +115,7 @@ def test_search_by_name_is_case_insensitive(client):
     resp = client.get(PROJECTS_URL, params={"search": "LABORAL"})
     assert resp.status_code == 200
     body = resp.json()
-    assert [p["name"] for p in body] == ["Gestió laboral"]
+    assert [p["name"] for p in body["items"]] == ["Gestió laboral"]
 
 
 @pytest.mark.integration
@@ -99,7 +123,9 @@ def test_search_with_no_match_returns_empty(client):
     """A search that matches nothing returns an empty list, not an error."""
     resp = client.get(PROJECTS_URL, params={"search": "no-such-project"})
     assert resp.status_code == 200
-    assert resp.json() == []
+    body = resp.json()
+    assert body["items"] == []
+    assert body["next_cursor"] is None
 
 
 @pytest.mark.integration
@@ -107,7 +133,7 @@ def test_project_type_filter(client):
     """?project_type= keeps only projects of that type (case-insensitive exact)."""
     resp = client.get(PROJECTS_URL, params={"project_type": "iguala trimestral"})
     assert resp.status_code == 200
-    body = resp.json()
+    body = resp.json()["items"]
     assert {p["project_type"] for p in body} == {"Iguala trimestral"}
     assert {p["id"] for p in body} == {"proj-003", "proj-004", "proj-011"}
 
@@ -117,7 +143,7 @@ def test_entity_type_filter(client):
     """?entity_type= keeps only projects for that entity type."""
     resp = client.get(PROJECTS_URL, params={"entity_type": "Persona física"})
     assert resp.status_code == 200
-    body = resp.json()
+    body = resp.json()["items"]
     assert {p["entity_type"] for p in body} == {"Persona física"}
     assert {p["id"] for p in body} == {"proj-003", "proj-004"}
 
@@ -127,7 +153,7 @@ def test_status_filter_isolates_the_inactive_project(client):
     """?status=Inactivo returns only the single inactive project."""
     resp = client.get(PROJECTS_URL, params={"status": "Inactivo"})
     assert resp.status_code == 200
-    body = resp.json()
+    body = resp.json()["items"]
     assert [p["id"] for p in body] == ["proj-012"]
     assert body[0]["status"] == "Inactivo"
 
@@ -140,7 +166,7 @@ def test_filters_compose(client):
         params={"project_type": "Iguala trimestral", "status": "Activo"},
     )
     assert resp.status_code == 200
-    body = resp.json()
+    body = resp.json()["items"]
     # All three trimestral projects are active, so status=Activo keeps all of them.
     assert {p["id"] for p in body} == {"proj-003", "proj-004", "proj-011"}
 
@@ -149,7 +175,7 @@ def test_filters_compose(client):
         params={"entity_type": "Persona física", "search": "IGI"},
     )
     assert resp.status_code == 200
-    assert [p["id"] for p in resp.json()] == ["proj-004"]
+    assert [p["id"] for p in resp.json()["items"]] == ["proj-004"]
 
 
 @pytest.mark.integration
@@ -219,6 +245,38 @@ class _LiveShapedBCClient(BusinessCentralClient):
             )
         ]
 
+    def get_projects_page(
+        self,
+        *,
+        search=None,
+        project_type=None,
+        entity_type=None,
+        status=None,
+        cursor=None,
+        page_size=25,
+    ):
+        projects = self.get_projects()
+        if search:
+            needle = search.casefold()
+            projects = [p for p in projects if needle in p.name.casefold()]
+        if project_type is not None:
+            wanted = project_type.casefold()
+            projects = [
+                p for p in projects if (p.project_type or "").casefold() == wanted
+            ]
+        if entity_type is not None:
+            wanted = entity_type.casefold()
+            projects = [
+                p for p in projects if (p.entity_type or "").casefold() == wanted
+            ]
+        if status is not None:
+            projects = [p for p in projects if p.status is status]
+        return BCProjectPage(items=projects, next_cursor=None)
+
+    def get_customer_names(self, customer_ids):
+        wanted = set(customer_ids)
+        return {c.id: c.name for c in self.get_customers() if c.id in wanted}
+
     def get_users(self):
         return []
 
@@ -236,19 +294,19 @@ class _LiveShapedBCClient(BusinessCentralClient):
 def test_live_shaped_project_serializes_with_none_type_fields():
     """A live-shaped project (no type/certificate data) still validates."""
     service = ProjectsService(db=None, bc_client=_LiveShapedBCClient())
-    projects = service.list_projects()
-    assert len(projects) == 1
-    assert projects[0].project_type is None
-    assert projects[0].entity_type is None
-    assert projects[0].has_certificate is None
+    page = service.list_projects()
+    assert len(page.items) == 1
+    assert page.items[0].project_type is None
+    assert page.items[0].entity_type is None
+    assert page.items[0].has_certificate is None
 
 
 @pytest.mark.unit
 def test_project_type_filter_excludes_untyped_projects_without_crashing():
     """Filtering by project_type/entity_type never matches a None field."""
     service = ProjectsService(db=None, bc_client=_LiveShapedBCClient())
-    assert service.list_projects(project_type="Iguala mensual") == []
-    assert service.list_projects(entity_type="Societat") == []
+    assert service.list_projects(project_type="Iguala mensual").items == []
+    assert service.list_projects(entity_type="Societat").items == []
 
 
 @pytest.mark.auth

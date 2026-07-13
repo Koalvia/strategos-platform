@@ -120,6 +120,18 @@ export interface Project {
   status: ProjectStatus
 }
 
+// One page of the projects directory, plus an opaque continuation token
+// (pass it back as `cursor` to fetch the next page; `null` once exhausted).
+export interface ProjectPageResponse {
+  items: ProjectResponse[]
+  next_cursor: string | null
+}
+
+export interface ProjectPage {
+  items: Project[]
+  nextCursor: string | null
+}
+
 // Derived due state for an obligation instance (values mirror the UI badges).
 // "Sin fecha" covers instances with no due_date (e.g. live BC links that don't
 // carry date fields yet) — see backend DerivedObligationStatus.undated.
@@ -268,6 +280,15 @@ export function transformProjectResponse(backendProject: ProjectResponse): Proje
     certificateExpiry: backendProject.certificate_expiry || undefined,
     filingDate: backendProject.filing_date || undefined,
     status: backendProject.status,
+  }
+}
+
+export function transformProjectPageResponse(
+  backendPage: ProjectPageResponse,
+): ProjectPage {
+  return {
+    items: backendPage.items.map(transformProjectResponse),
+    nextCursor: backendPage.next_cursor,
   }
 }
 

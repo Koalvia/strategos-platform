@@ -80,6 +80,26 @@ def _parse_date(value: str | None) -> date | None:
     return date.fromisoformat(text)
 
 
+def _encode_cursor(next_link: str) -> str:
+    """Wrap a BC ``@odata.nextLink`` as an opaque cursor.
+
+    Callers (the frontend, in particular) never need BC's actual URL shape —
+    base64-encoding it keeps the tenant/company/API-group details out of the
+    network tab without pretending this is real encryption.
+    """
+    return base64.urlsafe_b64encode(next_link.encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> str:
+    """Reverse :func:`_encode_cursor` back to BC's absolute ``nextLink`` URL."""
+    return base64.urlsafe_b64decode(cursor.encode()).decode()
+
+
+def _escape_odata_literal(value: str) -> str:
+    """Escape a value for interpolation into an OData string literal (``'..'``)."""
+    return value.replace("'", "''")
+
+
 class LiveBusinessCentralClient(BusinessCentralClient):
     """A :class:`BusinessCentralClient` backed by the real Business Central API."""
 
