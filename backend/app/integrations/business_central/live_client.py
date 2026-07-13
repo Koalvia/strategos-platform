@@ -7,13 +7,12 @@ API published by Becentis — see ``docs/postman/``).
 
 ``customers``, ``projects``, ``users``, ``obligations`` and ``projectObligations``
 are wired up: their payloads are BC's native entities, so this client does the
-narrowing down to the transport DTOs. ``obligations``/``projectObligations`` are
-far thinner than the mock assumed — BC exposes only ``code``/``description`` for
-an obligation and only ``jobNo``/``obligationCode`` for a project link, so the
-richer fields (periodicity, due-date rule, subject, due/submission dates, status)
-are left unset (``None``) pending a BC-side field addition (email 2026-07-10).
-``userTasks`` is intentionally left unimplemented (a pending userTasks decision)
-and raises ``NotImplementedError``.
+narrowing down to the transport DTOs. ``obligation`` now carries ``periodicity``
+and ``dueDateRule`` and ``projectObligation`` now carries ``subject``, ``dueDate``
+and ``submissionDate``, so those fields are mapped through. ``status`` has no BC
+source (Strategos derives it), and an instance BC still returns without a
+``dueDate`` remains undated (``Sin fecha``). ``userTasks`` is intentionally left
+unimplemented (a pending userTasks decision) and raises ``NotImplementedError``.
 
 Auth is OAuth2 client-credentials against Azure AD. The access token is cached in
 memory and only re-requested once it is close to expiry, so a burst of reads
@@ -24,6 +23,7 @@ customers/projects, so a single page cannot be assumed).
 
 import time
 from collections.abc import Callable
+from datetime import date
 
 import httpx
 
@@ -63,6 +63,14 @@ def _clean_option(value: str | None) -> str:
     """Normalise a BC Option value, collapsing the blank sentinels to ``\"\"``."""
     text = (value or "").strip()
     return "" if text in _BLANK_OPTIONS else text
+
+
+def _parse_date(value: str | None) -> date | None:
+    """Parse a BC ISO date string to :class:`date`, ``None`` if absent/blank."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    return date.fromisoformat(text)
 
 
 class LiveBusinessCentralClient(BusinessCentralClient):
@@ -256,8 +264,9 @@ class LiveBusinessCentralClient(BusinessCentralClient):
     def get_obligations(self) -> list[BCObligation]:
         """Return the obligation catalog, mapped from BC's ``obligation`` entity.
 
-        BC only exposes ``code`` and ``description`` today, so ``periodicity`` and
-        ``due_date_rule`` are left unset (``None``) — see ``BCObligation``.
+        ``periodicity`` and ``due_date_rule`` come from BC's ``periodicity`` and
+        ``dueDateRule`` ``DateFormula`` fields (plain strings like ``"1Y"``) — see
+        ``BCObligation``.
         """
         obligations: list[BCObligation] = []
         for row in self._get_all("obligations"):
@@ -267,6 +276,8 @@ class LiveBusinessCentralClient(BusinessCentralClient):
                     id=code,
                     code=code,
                     name=row.get("description", ""),
+                    periodicity=row.get("periodicity"),
+                    due_date_rule=row.get("dueDateRule"),
                 )
             )
         return obligations
@@ -274,10 +285,11 @@ class LiveBusinessCentralClient(BusinessCentralClient):
     def get_project_obligations(self) -> list[BCProjectObligation]:
         """Return project-obligation links from BC's ``projectObligation`` entity.
 
-        BC only links ``jobNo`` to ``obligationCode`` today, so ``subject``,
-        ``due_date``, ``submission_date`` and ``status`` are left unset (``None``)
-        — see ``BCProjectObligation``. Without a ``due_date`` the obligations
-        domain classifies every instance as "sin fecha".
+        ``subject``, ``due_date`` and ``submission_date`` come from BC's
+        ``subject``/``dueDate``/``submissionDate`` fields — see
+        ``BCProjectObligation``. ``status`` has no BC source (Strategos derives
+        it); an instance BC returns without a ``dueDate`` stays undated ("sin
+        fecha") in the obligations domain.
         """
         instances: list[BCProjectObligation] = []
         for row in self._get_all("projectObligations"):
@@ -286,6 +298,9 @@ class LiveBusinessCentralClient(BusinessCentralClient):
                     id=row["systemId"],
                     project_id=row.get("jobNo", ""),
                     obligation_id=row.get("obligationCode", ""),
+                    subject=row.get("subject"),
+                    due_date=_parse_date(row.get("dueDate")),
+                    submission_date=_parse_date(row.get("submissionDate")),
                 )
             )
         return instances
