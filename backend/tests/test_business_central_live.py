@@ -10,14 +10,19 @@ confirmed BC payloads (no real Strategos client data / PII). They cover:
 * the ``blocked`` / ``partnerType`` / ``jobStatus`` field mappings, including the
   ``_x0020_`` blank-Option case;
 * the computed ``active_project_count``;
-* the raw obligations / projectObligations mapping (only the fields BC actually
-  exposes today, the rest left unset);
+* the obligations / projectObligations mapping, including the
+  ``periodicity``/``dueDateRule`` and ``subject``/``dueDate``/``submissionDate``
+  fields BC now provides (and the undated fallback when a date is absent);
 * that the still-deferred ``userTasks`` entity raises ``NotImplementedError``.
 """
+
+from datetime import date
 
 import httpx
 import pytest
 
+from app.domains.obligations.schemas import DerivedObligationStatus
+from app.domains.obligations.service import derive_status
 from app.integrations.business_central.live_client import LiveBusinessCentralClient
 from app.integrations.business_central.models import (
     BCCustomer,
@@ -330,11 +335,20 @@ def test_user_field_mapping_with_email_fallback():
 
 
 @pytest.mark.unit
-def test_obligation_catalog_mapping_leaves_missing_fields_unset():
-    """Obligations map ``code``/``description``; BC has no periodicity/rule yet."""
+def test_obligation_catalog_mapping():
+    """Obligations map ``code``/``description``/``periodicity``/``dueDateRule``.
+
+    BC serializes the ``periodicity``/``dueDateRule`` ``DateFormula`` values as
+    plain strings (``"1Y"``/``"5Y"``); absent fields stay unset.
+    """
     obligations = [
-        {"code": "IRPF", "description": "Impost sobre la renda"},
-        {"code": "IGI"},  # description absent -> empty name, still valid
+        {
+            "code": "IRPF",
+            "description": "Impost sobre la renda",
+            "periodicity": "1Y",
+            "dueDateRule": "5Y",
+        },
+        {"code": "IGI"},  # description/periodicity/rule absent -> unset, still valid
     ]
     client, _ = _build(obligations=obligations)
 
@@ -345,21 +359,31 @@ def test_obligation_catalog_mapping_leaves_missing_fields_unset():
     assert irpf.id == "IRPF"
     assert irpf.code == "IRPF"
     assert irpf.name == "Impost sobre la renda"
-    # Not provided by BC today -> left unset.
-    assert irpf.periodicity is None
-    assert irpf.due_date_rule is None
+    # Raw DateFormula strings, mapped verbatim.
+    assert irpf.periodicity == "1Y"
+    assert irpf.due_date_rule == "5Y"
 
-    assert result[1].name == ""
+    igi = result[1]
+    assert igi.name == ""
+    assert igi.periodicity is None
+    assert igi.due_date_rule is None
 
 
 @pytest.mark.unit
-def test_project_obligation_link_mapping_leaves_missing_fields_unset():
-    """Project-obligation links map only ``systemId``/``jobNo``/``obligationCode``."""
+def test_project_obligation_link_mapping():
+    """Project-obligation links map subject/dueDate/submissionDate through.
+
+    Uses the confirmed IRPF/P00011 shape: a filed obligation (``submissionDate``
+    present) is no longer undated — ``derive_status`` classifies it ``on_track``.
+    """
     project_obligations = [
         {
             "systemId": "aaaaaaaa-1111-2222-3333-444444444444",
             "jobNo": "P00011",
             "obligationCode": "IRPF",
+            "subject": False,
+            "dueDate": "2026-07-31",
+            "submissionDate": "2026-07-01",
         }
     ]
     client, _ = _build(project_obligations=project_obligations)
@@ -371,11 +395,44 @@ def test_project_obligation_link_mapping_leaves_missing_fields_unset():
     assert instance.id == "aaaaaaaa-1111-2222-3333-444444444444"
     assert instance.project_id == "P00011"
     assert instance.obligation_id == "IRPF"
-    # BC's real projectObligation carries none of these today -> left unset.
+    assert instance.subject is False
+    assert instance.due_date == date(2026, 7, 31)
+    assert instance.submission_date == date(2026, 7, 1)
+    # No BC source for status.
+    assert instance.status is None
+
+    # A filed instance with a due date is no longer "sin fecha".
+    status = derive_status(
+        instance.due_date,
+        instance.submission_date,
+        reference_date=date(2026, 7, 13),
+    )
+    assert status is DerivedObligationStatus.on_track
+
+
+@pytest.mark.unit
+def test_project_obligation_without_due_date_stays_undated():
+    """An instance BC returns without a ``dueDate`` remains undated."""
+    project_obligations = [
+        {
+            "systemId": "bbbbbbbb-1111-2222-3333-444444444444",
+            "jobNo": "P00012",
+            "obligationCode": "IGI",
+        }
+    ]
+    client, _ = _build(project_obligations=project_obligations)
+
+    instance = client.get_project_obligations()[0]
     assert instance.subject is None
     assert instance.due_date is None
     assert instance.submission_date is None
-    assert instance.status is None
+
+    status = derive_status(
+        instance.due_date,
+        instance.submission_date,
+        reference_date=date(2026, 7, 13),
+    )
+    assert status is DerivedObligationStatus.undated
 
 
 @pytest.mark.unit

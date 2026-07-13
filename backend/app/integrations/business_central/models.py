@@ -142,18 +142,22 @@ class BCUserTask(BaseModel):
 class BCObligation(BaseModel):
     """A catalog obligation type (BC ``GET /obligations``).
 
-    Mapped from BC's native ``obligation`` entity by the live client, which today
-    only exposes ``code`` and ``description``. ``periodicity`` and
-    ``due_date_rule`` do **not** exist in the real BC schema yet (pending a
-    BC-side field addition — email to Maanan/Sergio, 2026-07-10), so the live
-    client leaves them unset (``None``). The mock client still populates them from
-    fixtures, so the fixture-backed catalog view is unaffected.
+    Mapped from BC's native ``obligation`` entity by the live client. BC now
+    exposes ``periodicity`` and ``dueDateRule`` (both BC ``DateFormula`` values,
+    serialized as plain strings such as ``"1Y"`` or ``"5Y"``, not the enum's
+    Spanish/Catalan words), so the live client populates them.
+
+    ``periodicity`` is therefore a free-form ``str`` rather than the
+    :class:`Periodicity` enum: the live ``DateFormula`` strings would not validate
+    against the enum's ``mensual``/``trimestral``/... members. The mock client's
+    fixture values (e.g. ``"mensual"``) remain valid plain strings under this
+    looser type, so no fixture rewrite is required.
     """
 
     id: str
     code: str
     name: str
-    periodicity: Periodicity | None = None
+    periodicity: str | None = None
     due_date_rule: str | None = None
 
 
@@ -166,13 +170,12 @@ class BCProjectObligation(BaseModel):
     its own due state from ``due_date``/``submission_date`` against a reference
     date in the obligations domain.
 
-    Today BC's real ``projectObligation`` entity only links ``jobNo`` to
-    ``obligationCode`` — it carries no ``subject``, ``due_date``,
-    ``submission_date`` or ``status``. Those are therefore optional and left
-    unset (``None``) by the live client until the fields land on the BC side
-    (pending, email 2026-07-10). The mock client still populates them from
-    fixtures, so the fixture-backed views (and the due-date calendar) are
-    unaffected.
+    BC's ``projectObligation`` entity now carries ``subject``, ``dueDate`` and
+    ``submissionDate`` alongside the ``jobNo``/``obligationCode`` link, so the
+    live client populates them. ``submission_date`` stays ``None`` until the
+    obligation is filed, and any instance BC still returns without a ``dueDate``
+    remains undated (``Sin fecha``) — both are handled by the obligations domain.
+    ``status`` has no BC source and is left unset (Strategos derives its own).
     """
 
     id: str
