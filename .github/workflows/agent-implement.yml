@@ -210,7 +210,7 @@ jobs:
           fi
 
       - name: Retry — comment, label, and re-trigger
-        if: steps.retry.outputs.action == 'retry'
+        if: always() && steps.retry.outputs.action == 'retry'
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
@@ -242,7 +242,7 @@ jobs:
             gh issue edit "$ISSUE" --repo "$REPO" --add-label "auto"
 
       - name: Escalate — mark needs-human
-        if: steps.retry.outputs.action == 'needs-human'
+        if: always() && steps.retry.outputs.action == 'needs-human'
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
@@ -268,7 +268,7 @@ jobs:
           )"
 
       - name: Notify Slack — retrying
-        if: steps.retry.outputs.action == 'retry'
+        if: always() && steps.retry.outputs.action == 'retry'
         uses: ./.github/actions/slack-notify
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -277,7 +277,7 @@ jobs:
             ${{ github.event.issue.html_url }}
 
       - name: Notify Slack — needs human
-        if: steps.retry.outputs.action == 'needs-human'
+        if: always() && steps.retry.outputs.action == 'needs-human'
         uses: ./.github/actions/slack-notify
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
