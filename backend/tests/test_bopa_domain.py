@@ -32,6 +32,24 @@ class _FailingFetchClient(MockBopaClient):
         return super().fetch_content(source_url)
 
 
+# A body with characters that only survive a correct UTF-16 round-trip.
+_UTF16_BODY_TEXT = (
+    "<html><head><title>BOPA (UTF-16)</title></head>"
+    "<body><p>Retirada de la reserva — Andorra: â‚¬ Ã± Ã§</p></body></html>"
+)
+
+
+class _Utf16FetchClient(MockBopaClient):
+    """A mock client whose ``fetch_content`` returns UTF-16-with-BOM bodies.
+
+    Mirrors the production surprise from #69, where a subset of BOPA's own HTML
+    exports are served as UTF-16 rather than UTF-8.
+    """
+
+    def fetch_content(self, source_url: str) -> bytes:
+        return _UTF16_BODY_TEXT.encode("utf-16")
+
+
 @pytest.mark.integration
 def test_sync_populates_bulletins_and_documents(db_session):
     """The first sync creates every fixture bulletin and its documents."""
@@ -91,6 +109,52 @@ def test_one_failing_document_does_not_abort_the_bulletin(db_session):
 
     assert db_session.query(BopaBulletin).count() == 2
     assert db_session.query(BopaDocument).count() == 2
+
+
+@pytest.mark.integration
+def test_sync_decodes_utf16_documents_instead_of_failing(db_session):
+    """A UTF-16-with-BOM body is decoded correctly, not counted as failed (#69)."""
+    service = BopaService(db_session, _Utf16FetchClient())
+    result = service.sync_latest()
+
+    # All four HTML documents decode; none is lost to the encoding mismatch.
+    assert result.documents_synced == 4
+    assert result.documents_failed == 0
+    assert db_session.query(BopaDocument).count() == 4
+
+    # The stored body matches the original text, BOM stripped by the utf-16 codec.
+    doc = db_session.query(BopaDocument).first()
+    assert doc.html_content == _UTF16_BODY_TEXT
+    assert "﻿" not in doc.html_content
+
+
+@pytest.mark.integration
+def test_sync_backfills_previously_incomplete_bulletins(db_session):
+    """A bulletin left short by a failed download is backfilled on a later run (#69)."""
+    # First run: one document per bulletin fails to download and is dropped.
+    failing = BopaService(db_session, _FailingFetchClient())
+    first = failing.sync_latest()
+    assert first.bulletins_synced == 2
+    assert first.documents_synced == 2
+    assert first.documents_failed == 2
+    assert db_session.query(BopaDocument).count() == 2
+
+    # Second run with a healthy client backfills only the two missing documents
+    # into the already-stored bulletins — the bulletin rows are not recreated.
+    healthy = BopaService(db_session, MockBopaClient())
+    second = healthy.sync_latest()
+    assert second.bulletins_synced == 0
+    assert second.documents_synced == 2
+    assert second.documents_failed == 0
+    assert db_session.query(BopaBulletin).count() == 2
+    assert db_session.query(BopaDocument).count() == 4
+
+    # Third run is a no-op backfill: nothing missing, no duplicate rows.
+    third = healthy.sync_latest()
+    assert third.bulletins_synced == 0
+    assert third.documents_synced == 0
+    assert third.documents_failed == 0
+    assert db_session.query(BopaDocument).count() == 4
 
 
 @pytest.mark.integration

@@ -10,11 +10,13 @@
 * The read helpers (:meth:`list_bulletins`, :meth:`get_bulletin`,
   :meth:`get_document`) that back the query endpoints.
 
-A numbered BOPA issue is legally immutable once published, so a bulletin whose
-row already exists is never re-fetched. One known limitation follows from that:
-if a prior run crashed part-way through a bulletin (leaving fewer documents than
-``total_document_count``), a later run skips it rather than completing it — see
-the issue's Non-goals.
+A numbered BOPA issue is legally immutable once published, so its bulletin row is
+written once and never rewritten. A bulletin that is already complete (its stored
+``document_count`` has reached ``total_document_count``) is skipped without any
+API call. A bulletin that is short — e.g. because a prior run lost documents to a
+transient fetch/decode failure (see #69) — is revisited: only the missing
+documents are inserted, guarded by the ``(bulletin_id, document_name)`` unique
+constraint so re-runs stay idempotent.
 """
 
 from datetime import date, timedelta
@@ -50,14 +52,17 @@ class BopaService:
         self.bopa_client = bopa_client
 
     def sync_latest(self) -> SyncResult:
-        """Fetch recent bulletins and persist any not already stored.
+        """Fetch recent bulletins and persist new or missing documents.
 
-        Idempotent: bulletins already present (matched on ``(year, num)``) are
-        skipped, so calling this twice back-to-back creates no duplicate rows and
-        performs no redundant document fetches. Each bulletin is committed on its
-        own so a crash mid-catch-up keeps earlier bulletins' progress, and a
-        single failing document download is logged and counted without aborting
-        the rest of its bulletin.
+        Idempotent: a bulletin already stored and complete (its ``document_count``
+        has reached ``total_document_count``) is skipped without any API call, so
+        calling this twice back-to-back creates no duplicate rows. A bulletin that
+        is short — a prior run lost documents to a transient fetch/decode failure
+        (see #69) — is revisited and only its missing documents are inserted; the
+        bulletin row itself is not recreated, so such a backfill does not count as
+        a new ``bulletins_synced``. Each bulletin is committed on its own so a
+        crash mid-catch-up keeps earlier bulletins' progress, and a single failing
+        document download is logged and counted without aborting the rest.
         """
         # bopa.ad's own homepage queries with "tomorrow" so a bulletin published
         # today is never missed by the API's rolling window (see #48).
@@ -71,10 +76,7 @@ class BopaService:
             deduped.setdefault((item.year, item.num), item)
 
         existing = {
-            (year, num)
-            for year, num in self.db.query(
-                BopaBulletin.year, BopaBulletin.num
-            ).all()
+            (b.year, b.num): b for b in self.db.query(BopaBulletin).all()
         }
 
         bulletins_synced = 0
@@ -82,8 +84,24 @@ class BopaService:
         documents_failed = 0
 
         for (year, num), item in sorted(deduped.items()):
-            if (year, num) in existing:
-                # A published issue is immutable — never re-synced once stored.
+            stored = existing.get((year, num))
+            if stored is not None:
+                # Immutable issue: the row stays, but a prior run may have stored
+                # fewer documents than the issue has (#69). Backfill only the
+                # shortfall; a bulletin already complete needs no API call. The
+                # "totalCount can exceed documents returned" quirk means such a
+                # bulletin stays perennially short and is re-listed each run, but
+                # the per-name skip below keeps that a cheap no-op.
+                if stored.document_count >= stored.total_document_count:
+                    continue
+                page = self.bopa_client.get_documents_by_bopa(year, num)
+                present = {doc.document_name for doc in stored.documents}
+                synced, failed = self._persist_documents(
+                    stored, year, num, page.documents, skip_names=present
+                )
+                self.db.commit()
+                documents_synced += synced
+                documents_failed += failed
                 continue
 
             page = self.bopa_client.get_documents_by_bopa(year, num)
@@ -107,44 +125,16 @@ class BopaService:
             self.db.add(bulletin)
             self.db.flush()  # assign bulletin.id for the documents' FK
 
-            for doc in page.documents:
-                try:
-                    html_content = None
-                    if doc.file_type in _HTML_FILE_TYPES:
-                        html_content = self.bopa_client.fetch_content(
-                            doc.source_url
-                        ).decode("utf-8")
-                    self.db.add(
-                        BopaDocument(
-                            bulletin_id=bulletin.id,
-                            document_name=doc.document_name,
-                            file_type=doc.file_type,
-                            organisme=doc.organisme,
-                            organisme_pare=doc.organisme_pare,
-                            tema=doc.tema,
-                            tema_pare=doc.tema_pare,
-                            title=doc.title,
-                            article_date=doc.article_date,
-                            source_url=doc.source_url,
-                            pdf_url=self.bopa_client.build_pdf_url(
-                                year, num, doc.document_name
-                            ),
-                            html_content=html_content,
-                        )
-                    )
-                    documents_synced += 1
-                except Exception:
-                    # One bad document must not lose the rest of the bulletin.
-                    logger.exception(
-                        "Failed to fetch BOPA document %s", doc.document_name
-                    )
-                    documents_failed += 1
-                    continue
+            synced, failed = self._persist_documents(
+                bulletin, year, num, page.documents, skip_names=set()
+            )
+            documents_synced += synced
+            documents_failed += failed
 
             # Commit per bulletin, not one giant transaction: a crash part-way
             # through a multi-bulletin catch-up keeps earlier bulletins' progress.
             self.db.commit()
-            existing.add((year, num))
+            existing[(year, num)] = bulletin
             bulletins_synced += 1
 
         return SyncResult(
@@ -152,6 +142,78 @@ class BopaService:
             documents_synced=documents_synced,
             documents_failed=documents_failed,
         )
+
+    def _persist_documents(
+        self,
+        bulletin: BopaBulletin,
+        year: int,
+        num: int,
+        documents,
+        *,
+        skip_names: set[str],
+    ) -> tuple[int, int]:
+        """Insert each document not already present, returning (synced, failed).
+
+        Shared by the new-bulletin and backfill paths. ``skip_names`` holds the
+        ``document_name``s already stored for the bulletin (empty for a brand-new
+        one); those are left untouched so re-runs neither re-fetch nor duplicate
+        them. A single document that fails to download/decode is logged and
+        counted without aborting the rest of the bulletin.
+        """
+        synced = 0
+        failed = 0
+        for doc in documents:
+            if doc.document_name in skip_names:
+                continue
+            try:
+                html_content = None
+                if doc.file_type in _HTML_FILE_TYPES:
+                    html_content = self._decode_html(
+                        self.bopa_client.fetch_content(doc.source_url)
+                    )
+                self.db.add(
+                    BopaDocument(
+                        bulletin_id=bulletin.id,
+                        document_name=doc.document_name,
+                        file_type=doc.file_type,
+                        organisme=doc.organisme,
+                        organisme_pare=doc.organisme_pare,
+                        tema=doc.tema,
+                        tema_pare=doc.tema_pare,
+                        title=doc.title,
+                        article_date=doc.article_date,
+                        source_url=doc.source_url,
+                        pdf_url=self.bopa_client.build_pdf_url(
+                            year, num, doc.document_name
+                        ),
+                        html_content=html_content,
+                    )
+                )
+                synced += 1
+            except Exception:
+                # One bad document must not lose the rest of the bulletin.
+                logger.exception(
+                    "Failed to fetch BOPA document %s", doc.document_name
+                )
+                failed += 1
+                continue
+        return synced, failed
+
+    @staticmethod
+    def _decode_html(content: bytes) -> str:
+        """Decode a fetched HTML body, tolerating BOPA's UTF-16 exports.
+
+        Most bodies are UTF-8, but a subset of BOPA's own Windows/Word-style HTML
+        exports are served as UTF-16-with-BOM (see #69); Python's ``utf-16`` codec
+        auto-detects and strips the BOM in either byte order, so no manual BOM
+        sniffing is needed. A body that decodes as neither raises and is handled
+        by the caller's per-document ``except`` (logged + counted, still skips
+        only that one document).
+        """
+        try:
+            return content.decode("utf-8")
+        except UnicodeDecodeError:
+            return content.decode("utf-16")
 
     def list_bulletins(
         self,
