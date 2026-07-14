@@ -4,6 +4,7 @@ import {
   FolderKanban,
   ListTodo,
   Clock,
+  Newspaper,
   Settings,
   type LucideIcon,
 } from "lucide-react"
@@ -35,6 +36,7 @@ export const navGroups: NavGroup[] = [
     label: "GESTIÓN",
     items: [
       { label: "Obligaciones", href: "/obligaciones", icon: Clock },
+      { label: "BOPA", href: "/bopa", icon: Newspaper },
       { label: "Usuarios", href: "/usuarios", icon: Settings },
     ],
   },
