@@ -151,9 +151,13 @@ jobs:
             exit 1
           fi
 
-          is_error="$(jq -r '.[-1].is_error // empty' "${EXECUTION_FILE}")"
-          num_turns="$(jq -r '.[-1].num_turns // "?"' "${EXECUTION_FILE}")"
-          cost="$(jq -r '.[-1].total_cost_usd // "?"' "${EXECUTION_FILE}")"
+          # NOTE: use `if .x == null` rather than `// empty`/`// "?"` here — jq's
+          # `//` operator treats a literal `false` the same as `null` ("falsy"),
+          # so `.is_error // empty` would silently swallow a genuine `false`
+          # (success) and make this gate fail closed on every successful run.
+          is_error="$(jq -r 'if (.[-1].is_error == null) then "unknown" else (.[-1].is_error | tostring) end' "${EXECUTION_FILE}")"
+          num_turns="$(jq -r 'if (.[-1].num_turns == null) then "?" else (.[-1].num_turns | tostring) end' "${EXECUTION_FILE}")"
+          cost="$(jq -r 'if (.[-1].total_cost_usd == null) then "?" else (.[-1].total_cost_usd | tostring) end' "${EXECUTION_FILE}")"
           echo "Implementer result: is_error=${is_error:-unknown} num_turns=${num_turns} cost_usd=${cost}"
 
           if [ "${is_error}" != "false" ]; then
