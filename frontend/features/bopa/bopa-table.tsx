@@ -33,14 +33,14 @@ export function BopaTable({ documents, loading }: BopaTableProps) {
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
-      <Table>
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>Título</TableHead>
-            <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>Organismo</TableHead>
-            <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>Tema</TableHead>
-            <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>Fecha</TableHead>
-            <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>Boletín</TableHead>
+            <TableHead className={cn(HEAD_CLASS, "w-[36%] px-6 py-4")}>Título</TableHead>
+            <TableHead className={cn(HEAD_CLASS, "w-[24%] px-6 py-4")}>Organismo</TableHead>
+            <TableHead className={cn(HEAD_CLASS, "w-[16%] px-6 py-4")}>Tema</TableHead>
+            <TableHead className={cn(HEAD_CLASS, "w-[12%] px-6 py-4")}>Fecha</TableHead>
+            <TableHead className={cn(HEAD_CLASS, "w-[12%] px-6 py-4")}>Boletín</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -73,11 +73,18 @@ export function BopaTable({ documents, loading }: BopaTableProps) {
                   }}
                   className="cursor-pointer border-slate-100 hover:bg-slate-50"
                 >
-                  <TableCell className="max-w-md px-6 py-4 font-semibold text-slate-900">
+                  <TableCell
+                    title={document.title}
+                    className="truncate px-6 py-4 font-semibold text-slate-900"
+                  >
                     {document.title}
                   </TableCell>
-                  <TableCell className="px-6 py-4 text-slate-700">{document.organisme}</TableCell>
-                  <TableCell className="px-6 py-4 text-slate-700">{document.tema}</TableCell>
+                  <TableCell title={document.organisme} className="truncate px-6 py-4 text-slate-700">
+                    {document.organisme}
+                  </TableCell>
+                  <TableCell title={document.tema} className="truncate px-6 py-4 text-slate-700">
+                    {document.tema}
+                  </TableCell>
                   <TableCell className="px-6 py-4 whitespace-nowrap text-slate-500">
                     {formatDate(document.article_date)}
                   </TableCell>
