@@ -40,6 +40,10 @@ export const config = {
         dashboard: {
           summary: "/api/v1/dashboard/summary",
         },
+        bopa: {
+          documents: "/api/v1/bopa/documents",
+          documentFilters: "/api/v1/bopa/documents/filters",
+        },
       },
       // Frontend API routes (proxy to backend)
       auth: {
@@ -68,6 +72,10 @@ export const config = {
       },
       dashboard: {
         summary: "/api/dashboard",
+      },
+      bopa: {
+        documents: "/api/bopa/documents",
+        documentFilters: "/api/bopa/documents/filters",
       },
     },
   },
