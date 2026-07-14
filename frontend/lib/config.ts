@@ -43,6 +43,7 @@ export const config = {
         bopa: {
           documents: "/api/v1/bopa/documents",
           documentFilters: "/api/v1/bopa/documents/filters",
+          documentById: (id: string) => `/api/v1/bopa/documents/${id}`,
         },
       },
       // Frontend API routes (proxy to backend)

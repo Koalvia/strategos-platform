@@ -18,6 +18,13 @@ export interface BopaDocument {
   bulletin_num: number
 }
 
+// A BOPA document including its stored HTML body. Mirrors the backend
+// `DocumentDetail` schema (`GET /bopa/documents/{id}`), which extends the search
+// summary with `html_content` (null for non-HTML documents).
+export interface BopaDocumentDetail extends BopaDocument {
+  html_content: string | null
+}
+
 export interface BopaDocumentPage {
   items: BopaDocument[]
   total: number
@@ -70,6 +77,13 @@ export const bopaApi = {
     message?: string
   }> {
     const response = await fetch("/api/bopa/documents/filters")
+    return response.json()
+  },
+
+  async getDocument(
+    id: string,
+  ): Promise<{ success: boolean; data?: BopaDocumentDetail; message?: string }> {
+    const response = await fetch(`/api/bopa/documents/${encodeURIComponent(id)}`)
     return response.json()
   },
 }
