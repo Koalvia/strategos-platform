@@ -89,3 +89,13 @@ class BopaDocument(Base):
     fetched_at = Column(DateTime, nullable=False, server_default=func.now())
 
     bulletin = relationship("BopaBulletin", back_populates="documents")
+
+    @property
+    def bulletin_year(self) -> int:
+        """Year of the owning bulletin (search results span multiple bulletins)."""
+        return self.bulletin.year
+
+    @property
+    def bulletin_num(self) -> int:
+        """Issue number of the owning bulletin."""
+        return self.bulletin.num

@@ -29,12 +29,33 @@ class DocumentSummary(BaseModel):
     file_type: str
     source_url: str
     pdf_url: str
+    # A document carries no year/num of its own — these come from its owning
+    # bulletin (via ``BopaDocument.bulletin_year`` / ``bulletin_num``), so search
+    # results spanning multiple bulletins stay meaningful ("BOPA núm. 77, 2026").
+    bulletin_year: int
+    bulletin_num: int
 
 
 class DocumentDetail(DocumentSummary):
     """A BOPA document including its stored HTML body (``None`` for non-HTML)."""
 
     html_content: str | None = None
+
+
+class DocumentSearchPage(BaseModel):
+    """A page of search results with the total count of all matching documents."""
+
+    items: list[DocumentSummary]
+    total: int
+
+
+class DocumentFilterOptions(BaseModel):
+    """The distinct, sorted values available for each document facet filter."""
+
+    organisme: list[str]
+    tema: list[str]
+    organisme_pare: list[str]
+    tema_pare: list[str]
 
 
 class BulletinSummary(BaseModel):

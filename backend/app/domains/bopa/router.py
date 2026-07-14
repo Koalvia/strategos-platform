@@ -7,6 +7,8 @@ route requires a verified user (and the ``x-api-key`` gateway header, except
 under ``TESTING=1``).
 """
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -16,7 +18,14 @@ from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
 from app.integrations.bopa.client import BopaClient
 
-from .schemas import BulletinDetail, BulletinSummary, DocumentDetail, SyncResult
+from .schemas import (
+    BulletinDetail,
+    BulletinSummary,
+    DocumentDetail,
+    DocumentFilterOptions,
+    DocumentSearchPage,
+    SyncResult,
+)
 from .service import BopaService
 
 router = APIRouter(prefix="/bopa", tags=["bopa"])
@@ -54,6 +63,57 @@ def get_bulletin(
     """Return one bulletin with its documents (404 if unknown)."""
     service = BopaService(db, bopa_client)
     return service.get_bulletin(year, num)
+
+
+@router.get("/documents", response_model=DocumentSearchPage)
+def search_documents(
+    q: str | None = None,
+    organisme: str | None = None,
+    tema: str | None = None,
+    organisme_pare: str | None = None,
+    tema_pare: str | None = None,
+    year: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bopa_client: BopaClient = Depends(get_bopa_client),
+):
+    """Search/filter stored documents across all bulletins.
+
+    ``q`` substring-matches the title (case-insensitive); ``organisme`` / ``tema``
+    / ``organisme_pare`` / ``tema_pare`` are exact-match facets; ``year`` filters by
+    the owning bulletin; ``date_from`` / ``date_to`` bound ``article_date``.
+    ``limit`` / ``offset`` page the result, which carries the total match count.
+    """
+    service = BopaService(db, bopa_client)
+    return service.search_documents(
+        q=q,
+        organisme=organisme,
+        tema=tema,
+        organisme_pare=organisme_pare,
+        tema_pare=tema_pare,
+        year=year,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+        offset=offset,
+    )
+
+
+# Registered before ``/documents/{document_id}`` so the literal ``filters`` path is
+# not captured by the int path param (which would 422).
+@router.get("/documents/filters", response_model=DocumentFilterOptions)
+def get_document_filters(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bopa_client: BopaClient = Depends(get_bopa_client),
+):
+    """Return the sorted, deduplicated facet values for the document search."""
+    service = BopaService(db, bopa_client)
+    return service.get_document_filter_options()
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail)

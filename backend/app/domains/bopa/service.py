@@ -20,7 +20,7 @@ the issue's Non-goals.
 from datetime import date, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager
 
 from app import logger
 from app.integrations.bopa.client import BopaClient
@@ -31,6 +31,9 @@ from .schemas import (
     BulletinDetail,
     BulletinSummary,
     DocumentDetail,
+    DocumentFilterOptions,
+    DocumentSearchPage,
+    DocumentSummary,
     SyncResult,
 )
 
@@ -185,6 +188,82 @@ class BopaService:
         if bulletin is None:
             raise HTTPException(status_code=404, detail="Bulletin not found")
         return BulletinDetail.model_validate(bulletin)
+
+    def search_documents(
+        self,
+        *,
+        q: str | None = None,
+        organisme: str | None = None,
+        tema: str | None = None,
+        organisme_pare: str | None = None,
+        tema_pare: str | None = None,
+        year: int | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> DocumentSearchPage:
+        """Search/filter stored documents across all bulletins, most recent first.
+
+        ``q`` is a case-insensitive substring match on ``title``; the metadata
+        facets are exact-match equality when given; ``year`` filters via the
+        bulletin join; ``date_from`` / ``date_to`` inclusively bound
+        ``article_date``. Every row carries its bulletin's ``year`` / ``num`` — the
+        bulletin is joined once (and eager-loaded) rather than queried per row.
+        """
+        query = (
+            self.db.query(BopaDocument)
+            .join(BopaDocument.bulletin)
+            .options(contains_eager(BopaDocument.bulletin))
+        )
+        if q:
+            query = query.filter(BopaDocument.title.ilike(f"%{q}%"))
+        if organisme is not None:
+            query = query.filter(BopaDocument.organisme == organisme)
+        if tema is not None:
+            query = query.filter(BopaDocument.tema == tema)
+        if organisme_pare is not None:
+            query = query.filter(BopaDocument.organisme_pare == organisme_pare)
+        if tema_pare is not None:
+            query = query.filter(BopaDocument.tema_pare == tema_pare)
+        if year is not None:
+            query = query.filter(BopaBulletin.year == year)
+        if date_from is not None:
+            query = query.filter(BopaDocument.article_date >= date_from)
+        if date_to is not None:
+            # Upper bound is inclusive of the whole ``date_to`` day even though
+            # ``article_date`` carries a time component.
+            query = query.filter(
+                BopaDocument.article_date < date_to + timedelta(days=1)
+            )
+
+        total = query.count()
+        documents = (
+            query.order_by(
+                BopaDocument.article_date.desc(), BopaDocument.id.desc()
+            )
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return DocumentSearchPage(
+            items=[DocumentSummary.model_validate(d) for d in documents],
+            total=total,
+        )
+
+    def get_document_filter_options(self) -> DocumentFilterOptions:
+        """Return the sorted, deduplicated values available for each facet."""
+
+        def distinct_values(column) -> list[str]:
+            rows = self.db.query(column).distinct().order_by(column).all()
+            return [value for (value,) in rows if value is not None]
+
+        return DocumentFilterOptions(
+            organisme=distinct_values(BopaDocument.organisme),
+            tema=distinct_values(BopaDocument.tema),
+            organisme_pare=distinct_values(BopaDocument.organisme_pare),
+            tema_pare=distinct_values(BopaDocument.tema_pare),
+        )
 
     def get_document(self, document_id: int) -> DocumentDetail:
         """Return one document (with its HTML body) or raise 404."""
