@@ -50,6 +50,7 @@ export type CustomerStatus = "Activo" | "Inactivo"
 
 // Backend API response type (from GET /api/v1/customers)
 export interface CustomerResponse {
+  id: string
   name: string
   nif: string
   entity_type: string
@@ -67,6 +68,7 @@ export interface CustomerPageResponse {
 
 // Frontend type (camelCase for easier use in components)
 export interface Customer {
+  id: string
   name: string
   nif: string
   entityType: string
@@ -249,6 +251,7 @@ export interface ApiResponse<T = any> {
 // Transformation utilities to convert between backend and frontend types
 export function transformCustomerResponse(backendCustomer: CustomerResponse): Customer {
   return {
+    id: backendCustomer.id,
     name: backendCustomer.name,
     nif: backendCustomer.nif,
     entityType: backendCustomer.entity_type,

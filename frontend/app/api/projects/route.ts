@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     const projectType = searchParams.get("project_type")
     const entityType = searchParams.get("entity_type")
     const status = searchParams.get("status")
+    const customerId = searchParams.get("customer_id")
     const cursor = searchParams.get("cursor")
 
     // Forward the optional filters/cursor to the backend (server-side
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
     if (projectType) query.set("project_type", projectType)
     if (entityType) query.set("entity_type", entityType)
     if (status) query.set("status", status)
+    if (customerId) query.set("customer_id", customerId)
     if (cursor) query.set("cursor", cursor)
     const queryString = query.toString()
 

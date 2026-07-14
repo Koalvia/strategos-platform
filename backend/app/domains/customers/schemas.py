@@ -15,9 +15,12 @@ class CustomerResponse(BaseModel):
     """A customer as shown in the Clientes directory.
 
     Field names mirror the columns of ``clientes.png``:
-    Cliente/NIF/Tipo/Responsable/Proyectos/Estado.
+    Cliente/NIF/Tipo/Responsable/Proyectos/Estado. ``id`` is the Business Central
+    customer id (``BCCustomer.id``); it is not shown as a column but lets the
+    frontend route to a customer's detail screen (``/clientes/{id}``).
     """
 
+    id: str
     name: str
     nif: str
     entity_type: str

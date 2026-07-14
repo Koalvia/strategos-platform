@@ -24,6 +24,7 @@ export const config = {
         },
         customers: {
           base: "/api/v1/customers",
+          byId: (id: string) => `/api/v1/customers/${id}`,
         },
         projects: {
           base: "/api/v1/projects",

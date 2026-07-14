@@ -1,3 +1,7 @@
+"use client"
+
+import { useRouter } from "next/navigation"
+
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -19,6 +23,8 @@ const HEAD_CLASS =
   "text-xs font-semibold uppercase tracking-wide text-slate-500"
 
 export function CustomersTable({ customers, loading }: CustomersTableProps) {
+  const router = useRouter()
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
       <Table>
@@ -46,8 +52,22 @@ export function CustomersTable({ customers, loading }: CustomersTableProps) {
               </TableCell>
             </TableRow>
           ) : (
-            customers.map((customer) => (
-              <TableRow key={customer.nif} className="border-slate-100">
+            customers.map((customer) => {
+              const href = `/clientes/${customer.id}`
+              return (
+              <TableRow
+                key={customer.id}
+                role="link"
+                tabIndex={0}
+                onClick={() => router.push(href)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault()
+                    router.push(href)
+                  }
+                }}
+                className="cursor-pointer border-slate-100 hover:bg-slate-50"
+              >
                 <TableCell className="px-6 py-4 font-semibold text-slate-900">
                   {customer.name}
                 </TableCell>
@@ -80,7 +100,8 @@ export function CustomersTable({ customers, loading }: CustomersTableProps) {
                   </Badge>
                 </TableCell>
               </TableRow>
-            ))
+              )
+            })
           )}
         </TableBody>
       </Table>

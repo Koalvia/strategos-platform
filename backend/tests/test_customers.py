@@ -34,6 +34,7 @@ def test_response_fields_match_design_columns(client):
     assert resp.status_code == 200
     row = resp.json()["items"][0]
     assert set(row) == {
+        "id",
         "name",
         "nif",
         "entity_type",
@@ -43,6 +44,7 @@ def test_response_fields_match_design_columns(client):
     }
     # First mock customer, spot-checking the BC -> response mapping.
     assert row == {
+        "id": "cust-001",
         "name": "Fontaneria Puigcerdà SL",
         "nif": "A123456",
         "entity_type": "Societat",
@@ -130,6 +132,30 @@ def test_invalid_status_is_rejected(client):
     assert resp.status_code == 422
 
 
+@pytest.mark.integration
+def test_detail_returns_a_known_customer(client):
+    """GET /customers/{id} returns the one customer, all fields mapped."""
+    resp = client.get(f"{CUSTOMERS_URL}/cust-005")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == {
+        "id": "cust-005",
+        "name": "Fundació Cultural Andorrana",
+        "nif": "G567890",
+        "entity_type": "Fundació",
+        "responsible": "Anna Ferrer",
+        "project_count": 1,
+        "status": "Activo",
+    }
+
+
+@pytest.mark.integration
+def test_detail_unknown_id_returns_404(client):
+    """GET /customers/{id} 404s for an unknown id."""
+    resp = client.get(f"{CUSTOMERS_URL}/cust-999")
+    assert resp.status_code == 404
+
+
 @pytest.mark.auth
 def test_endpoint_requires_authentication(db_session):
     """Without a verified user the endpoint refuses the request.
@@ -145,6 +171,22 @@ def test_endpoint_requires_authentication(db_session):
     try:
         with TestClient(app) as unauth_client:
             resp = unauth_client.get(CUSTOMERS_URL)
+        assert resp.status_code in (401, 403)
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.auth
+def test_detail_requires_authentication(db_session):
+    """Without a verified user the detail endpoint refuses the request."""
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as unauth_client:
+            resp = unauth_client.get(f"{CUSTOMERS_URL}/cust-001")
         assert resp.status_code in (401, 403)
     finally:
         app.dependency_overrides.clear()

@@ -1,6 +1,6 @@
 // Customers feature API client (client-side).
 // Calls the Next.js route handler under /api/customers — never the backend directly.
-import type { CustomerPage, CustomerStatus } from "@/lib/types"
+import type { Customer, CustomerPage, CustomerStatus } from "@/lib/types"
 
 export interface GetCustomersParams {
   search?: string
@@ -20,6 +20,13 @@ export const customersApi = {
     const queryString = query.toString()
 
     const response = await fetch(`/api/customers${queryString ? `?${queryString}` : ""}`)
+    return response.json()
+  },
+
+  async getCustomer(
+    id: string,
+  ): Promise<{ success: boolean; data?: Customer; message?: string }> {
+    const response = await fetch(`/api/customers/${encodeURIComponent(id)}`)
     return response.json()
   },
 }

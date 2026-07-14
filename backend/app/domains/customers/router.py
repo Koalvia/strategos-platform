@@ -18,7 +18,7 @@ from app.integrations.business_central.client import (
 )
 from app.integrations.business_central.models import CustomerStatus
 
-from .schemas import CustomerPageResponse
+from .schemas import CustomerPageResponse, CustomerResponse
 from .service import CustomersService
 
 router = APIRouter(prefix="/customers", tags=["customers"])
@@ -45,3 +45,15 @@ def list_customers(
     return service.list_customers(
         search=search, status=status, cursor=cursor, page_size=page_size
     )
+
+
+@router.get("/{customer_id}", response_model=CustomerResponse)
+def get_customer(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+):
+    """Return a single customer by id (404 if unknown)."""
+    service = CustomersService(db, bc_client)
+    return service.get_customer(customer_id)

@@ -159,6 +159,37 @@ def test_status_filter_isolates_the_inactive_project(client):
 
 
 @pytest.mark.integration
+def test_customer_id_filter_isolates_one_customers_projects(client):
+    """?customer_id= returns only that customer's projects."""
+    resp = client.get(PROJECTS_URL, params={"customer_id": "cust-001"})
+    assert resp.status_code == 200
+    body = resp.json()["items"]
+    assert {p["id"] for p in body} == {"proj-001", "proj-002"}
+    assert {p["customer"]["id"] for p in body} == {"cust-001"}
+
+
+@pytest.mark.integration
+def test_customer_id_filter_with_no_match_returns_empty(client):
+    """?customer_id= for an unknown customer returns an empty list, not an error."""
+    resp = client.get(PROJECTS_URL, params={"customer_id": "cust-999"})
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+
+
+@pytest.mark.integration
+def test_customer_id_filter_composes_with_other_filters(client):
+    """?customer_id= intersects with the other filters (all must match)."""
+    # cust-007 owns proj-010 (Iguala mensual) and proj-011 (Iguala trimestral);
+    # adding project_type keeps only the trimestral one.
+    resp = client.get(
+        PROJECTS_URL,
+        params={"customer_id": "cust-007", "project_type": "Iguala trimestral"},
+    )
+    assert resp.status_code == 200
+    assert [p["id"] for p in resp.json()["items"]] == ["proj-011"]
+
+
+@pytest.mark.integration
 def test_filters_compose(client):
     """Multiple filters intersect (all must match)."""
     resp = client.get(

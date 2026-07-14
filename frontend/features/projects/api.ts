@@ -8,6 +8,8 @@ export interface GetProjectsParams {
   projectType?: string
   entityType?: string
   status?: ProjectStatus
+  // Restrict to a single customer's projects (used by the customer detail screen).
+  customerId?: string
   // Continuation token from a previous page's `nextCursor`; omit for page 1.
   cursor?: string
 }
@@ -21,6 +23,7 @@ export const projectsApi = {
     if (params.projectType) query.set("project_type", params.projectType)
     if (params.entityType) query.set("entity_type", params.entityType)
     if (params.status) query.set("status", params.status)
+    if (params.customerId) query.set("customer_id", params.customerId)
     if (params.cursor) query.set("cursor", params.cursor)
     const queryString = query.toString()
 

@@ -35,6 +35,7 @@ class ProjectsService:
         project_type: str | None = None,
         entity_type: str | None = None,
         status: ProjectStatus | None = None,
+        customer_id: str | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
     ) -> ProjectPageResponse:
@@ -44,7 +45,10 @@ class ProjectsService:
         ``project_type`` and ``entity_type`` match their field as a
         case-insensitive exact value (the two "Todos" dropdowns in
         ``proyectos.png``); ``status`` keeps only projects in that state;
-        ``cursor`` continues a previous page (see
+        ``customer_id`` keeps only projects belonging to that customer (an exact
+        match on ``BCProject.customer_id``, applied here rather than pushed down
+        to the BC page — mirroring the obligations domain's ``project_id``
+        filter); ``cursor`` continues a previous page (see
         ``ProjectPageResponse.next_cursor``). Filters compose (all supplied
         filters must match).
         """
@@ -56,10 +60,13 @@ class ProjectsService:
             cursor=cursor,
             page_size=page_size,
         )
-        customer_ids = {p.customer_id for p in page.items if p.customer_id}
+        items = page.items
+        if customer_id is not None:
+            items = [p for p in items if p.customer_id == customer_id]
+        customer_ids = {p.customer_id for p in items if p.customer_id}
         names_by_id = self.bc_client.get_customer_names(list(customer_ids))
         return ProjectPageResponse(
-            items=[self._to_response(p, names_by_id) for p in page.items],
+            items=[self._to_response(p, names_by_id) for p in items],
             next_cursor=page.next_cursor,
         )
 

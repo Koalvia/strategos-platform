@@ -31,6 +31,7 @@ def list_projects(
     project_type: str | None = None,
     entity_type: str | None = None,
     status: ProjectStatus | None = None,
+    customer_id: str | None = None,
     cursor: str | None = None,
     page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
     db: Session = Depends(get_db),
@@ -42,8 +43,9 @@ def list_projects(
     Optional query params (all compose): ``search`` (case-insensitive substring
     match on the project name), ``project_type`` and ``entity_type``
     (case-insensitive exact match), ``status`` (``Activo`` / ``Inactivo``),
-    ``cursor`` (the continuation token from a previous page's ``next_cursor``)
-    and ``page_size``.
+    ``customer_id`` (exact match, used by the customer detail screen to list a
+    client's own projects), ``cursor`` (the continuation token from a previous
+    page's ``next_cursor``) and ``page_size``.
     """
     service = ProjectsService(db, bc_client)
     return service.list_projects(
@@ -51,6 +53,7 @@ def list_projects(
         project_type=project_type,
         entity_type=entity_type,
         status=status,
+        customer_id=customer_id,
         cursor=cursor,
         page_size=page_size,
     )
