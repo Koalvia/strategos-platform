@@ -2,6 +2,7 @@ import os
 
 import sentry_sdk
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import settings
 
@@ -31,4 +32,14 @@ else:
 
 # Auto-discover tasks in domain modules
 # Add task modules here as you create them
-celery.autodiscover_tasks(["app.domains.auth.tasks"])
+celery.autodiscover_tasks(["app.domains.auth.tasks", "app.domains.bopa.tasks"])
+
+# Periodic tasks (Celery Beat)
+celery.conf.beat_schedule = {
+    "bopa-sync-daily": {
+        "task": "bopa.sync_daily",
+        # 06:00 UTC ≈ 07:00-08:00 Andorra local time depending on DST —
+        # comfortably after BOPA's own midnight-anchored regular-issue publish.
+        "schedule": crontab(hour=6, minute=0),
+    },
+}

@@ -65,6 +65,30 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Celery Beat - Periodic task scheduler
+  beat:
+    build: .
+    image: strategos-backend:latest
+    container_name: beat
+    command: celery -A app.celery_app.celery beat --loglevel=info
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/strategos_db
+    volumes:
+      # Mount source code for hot-reload in development (comment out for production)
+      - .:/app
+      - pip_cache:/root/.cache/pip
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - strategos-network
+    restart: unless-stopped
+
   # Redis - Message broker for Celery
   redis:
     image: redis:7
