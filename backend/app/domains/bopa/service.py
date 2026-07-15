@@ -285,7 +285,9 @@ class BopaService:
             # ``html_content`` is NULL for non-HTML (PDF-only) documents; ILIKE on
             # NULL yields NULL, which never matches inside the OR, so those still
             # match on title alone.
-            like = f"%{q}%"
+            escaped_q = q.replace("%", "\\%").replace("_","\\_")
+            like = f"%{escaped_q}%"
+
             query = query.filter(
                 or_(
                     BopaDocument.title.ilike(like),
