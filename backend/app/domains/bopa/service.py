@@ -285,13 +285,13 @@ class BopaService:
             # ``html_content`` is NULL for non-HTML (PDF-only) documents; ILIKE on
             # NULL yields NULL, which never matches inside the OR, so those still
             # match on title alone.
-            escaped_q = q.replace("%", "\\%").replace("_","\\_")
+            escaped_q = q.replace("%", "\\%").replace("_", "\\_")
             like = f"%{escaped_q}%"
 
             query = query.filter(
                 or_(
-                    BopaDocument.title.ilike(like),
-                    BopaDocument.html_content.ilike(like),
+                    BopaDocument.title.ilike(like, escape="\\"),
+                    BopaDocument.html_content.ilike(like, escape="\\"),
                 )
             )
         if organisme is not None:
