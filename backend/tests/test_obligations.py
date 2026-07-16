@@ -238,6 +238,62 @@ def test_filters_compose(frozen_client):
 
 
 @pytest.mark.integration
+def test_due_before_only_bound(frozen_client):
+    """?due_before alone keeps only instances due on or before that date."""
+    resp = frozen_client.get(OBLIGATIONS_URL, params={"due_before": "2026-06-30"})
+    assert resp.status_code == 200
+    # Only the June-due instances (pobl-001..005); July onwards is excluded.
+    assert {o["id"] for o in resp.json()} == {
+        "pobl-001",
+        "pobl-002",
+        "pobl-003",
+        "pobl-004",
+        "pobl-005",
+    }
+
+
+@pytest.mark.integration
+def test_generated_instances_derive_on_track(frozen_client):
+    """The generated far-future instances (pobl-013..018) are Al día, never overdue/upcoming."""
+    generated = {f"pobl-{n:03d}" for n in range(13, 19)}
+
+    on_track = frozen_client.get(
+        OBLIGATIONS_URL, params={"status": "Al día"}
+    ).json()
+    assert generated <= {o["id"] for o in on_track}
+
+    # None of them fall in the overdue or upcoming buckets.
+    for status in ("Vencido", "Próximo"):
+        got = frozen_client.get(OBLIGATIONS_URL, params={"status": status}).json()
+        assert generated.isdisjoint({o["id"] for o in got})
+
+
+@pytest.mark.integration
+def test_generated_instance_mapping(frozen_client):
+    """A generated instance (pobl-018) resolves its obligation/project/client names.
+
+    Expected names come from the mock BC client (the rows are Faker-generated).
+    """
+    from app.integrations.business_central.mock_client import (
+        MockBusinessCentralClient,
+    )
+
+    bc = MockBusinessCentralClient()
+    instance = next(i for i in bc.get_project_obligations() if i.id == "pobl-018")
+    project = next(p for p in bc.get_projects() if p.id == instance.project_id)
+    customer = next(c for c in bc.get_customers() if c.id == project.customer_id)
+    obligation = next(
+        o for o in bc.get_obligations() if o.id == instance.obligation_id
+    )
+
+    row = next(o for o in frozen_client.get(OBLIGATIONS_URL).json() if o["id"] == "pobl-018")
+    assert row["status"] == "Al día"
+    assert row["project"] == {"id": project.id, "name": project.name}
+    assert row["client"] == {"id": customer.id, "name": customer.name}
+    assert row["obligation"] == {"code": obligation.code, "name": obligation.name}
+
+
+@pytest.mark.integration
 def test_invalid_status_is_rejected(client):
     """An unknown status value is rejected by validation (422)."""
     resp = client.get(OBLIGATIONS_URL, params={"status": "Bogus"})

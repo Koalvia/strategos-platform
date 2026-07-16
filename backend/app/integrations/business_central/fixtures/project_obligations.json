@@ -10,5 +10,11 @@
   { "id": "pobl-009", "project_id": "proj-005", "obligation_id": "obl-irpf", "subject": false, "due_date": "2026-07-08", "submission_date": null, "status": "Próximo" },
   { "id": "pobl-010", "project_id": "proj-006", "obligation_id": "obl-ccaa", "subject": true, "due_date": "2026-07-12", "submission_date": null, "status": "Próximo" },
   { "id": "pobl-011", "project_id": "proj-008", "obligation_id": "obl-factures", "subject": true, "due_date": "2026-07-05", "submission_date": null, "status": "Próximo" },
-  { "id": "pobl-012", "project_id": "proj-009", "obligation_id": "obl-cass", "subject": true, "due_date": "2026-10-31", "submission_date": null, "status": "Pendiente" }
+  { "id": "pobl-012", "project_id": "proj-009", "obligation_id": "obl-cass", "subject": true, "due_date": "2026-10-31", "submission_date": null, "status": "Pendiente" },
+  { "id": "pobl-013", "project_id": "proj-013", "obligation_id": "obl-igi", "subject": true, "due_date": "2026-11-15", "submission_date": null, "status": "Pendiente" },
+  { "id": "pobl-014", "project_id": "proj-014", "obligation_id": "obl-irpf", "subject": true, "due_date": "2026-11-30", "submission_date": null, "status": "Pendiente" },
+  { "id": "pobl-015", "project_id": "proj-015", "obligation_id": "obl-is", "subject": true, "due_date": "2026-12-15", "submission_date": null, "status": "Pendiente" },
+  { "id": "pobl-016", "project_id": "proj-016", "obligation_id": "obl-ccaa", "subject": true, "due_date": "2026-12-30", "submission_date": null, "status": "Pendiente" },
+  { "id": "pobl-017", "project_id": "proj-017", "obligation_id": "obl-cass", "subject": true, "due_date": "2027-01-14", "submission_date": null, "status": "Pendiente" },
+  { "id": "pobl-018", "project_id": "proj-018", "obligation_id": "obl-informes", "subject": true, "due_date": "2027-01-29", "submission_date": null, "status": "Pendiente" }
 ]

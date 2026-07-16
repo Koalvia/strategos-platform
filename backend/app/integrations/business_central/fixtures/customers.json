@@ -6,5 +6,11 @@
   { "id": "cust-005", "name": "Fundació Cultural Andorrana", "nif": "G567890", "customer_type": "Fundació", "responsible": "Anna Ferrer", "active_project_count": 1, "status": "Activo" },
   { "id": "cust-006", "name": "Restaurant La Muntanya SL", "nif": "A678901", "customer_type": "Societat", "responsible": "Laura Puig", "active_project_count": 2, "status": "Activo" },
   { "id": "cust-007", "name": "Immobiliària Pirineus SL", "nif": "A789012", "customer_type": "Societat", "responsible": "Marc Solé", "active_project_count": 2, "status": "Activo" },
-  { "id": "cust-008", "name": "Clínica Dental Ordino SL", "nif": "A890123", "customer_type": "Societat", "responsible": "Anna Ferrer", "active_project_count": 1, "status": "Inactivo" }
+  { "id": "cust-008", "name": "Clínica Dental Ordino SL", "nif": "A890123", "customer_type": "Societat", "responsible": "Anna Ferrer", "active_project_count": 1, "status": "Inactivo" },
+  { "id": "cust-009", "name": "Flores PLC", "nif": "U207622", "customer_type": "Societat", "responsible": "Rachel Kelley", "active_project_count": 1, "status": "Activo" },
+  { "id": "cust-010", "name": "Mitchell Inc", "nif": "O112046", "customer_type": "Indivís", "responsible": "Zachary Kelly", "active_project_count": 1, "status": "Activo" },
+  { "id": "cust-011", "name": "Ellis-Walter", "nif": "W851215", "customer_type": "Comunitat de béns", "responsible": "Brandon Macdonald", "active_project_count": 1, "status": "Activo" },
+  { "id": "cust-012", "name": "Rangel-Green", "nif": "N691396", "customer_type": "Fundació", "responsible": "Pamela Meyers", "active_project_count": 1, "status": "Activo" },
+  { "id": "cust-013", "name": "Atkinson Inc", "nif": "U834744", "customer_type": "Societat", "responsible": "Veronica King", "active_project_count": 1, "status": "Activo" },
+  { "id": "cust-014", "name": "Hamilton-Phillips", "nif": "I109727", "customer_type": "Indivís", "responsible": "Regina Mcintosh", "active_project_count": 1, "status": "Activo" }
 ]

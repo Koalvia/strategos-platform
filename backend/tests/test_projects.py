@@ -34,12 +34,12 @@ PROJECTS_URL = "/api/v1/projects"
 
 
 @pytest.mark.integration
-def test_list_returns_all_twelve_projects_on_one_page(client):
-    """The default page size comfortably fits all 12 mock projects in one page."""
+def test_list_returns_all_projects_on_one_page(client):
+    """The default page size (25) comfortably fits all 18 mock projects in one page."""
     resp = client.get(PROJECTS_URL)
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["items"]) == 12
+    assert len(body["items"]) == 18
     assert body["next_cursor"] is None
 
 
@@ -187,6 +187,44 @@ def test_customer_id_filter_composes_with_other_filters(client):
     )
     assert resp.status_code == 200
     assert [p["id"] for p in resp.json()["items"]] == ["proj-011"]
+
+
+@pytest.mark.integration
+def test_customer_id_project_type_status_triple_compose(client):
+    """customer_id + project_type + status all intersect (AND)."""
+    # cust-007 owns proj-010 (Iguala mensual, Activo) and proj-011 (Iguala trimestral).
+    resp = client.get(
+        PROJECTS_URL,
+        params={
+            "customer_id": "cust-007",
+            "project_type": "Iguala mensual",
+            "status": "Activo",
+        },
+    )
+    assert resp.status_code == 200
+    assert [p["id"] for p in resp.json()["items"]] == ["proj-010"]
+
+
+@pytest.mark.integration
+def test_generated_project_surfaces_for_its_customer(client):
+    """A generated project (cust-014's) is returned by ?customer_id, client resolved.
+
+    Expected names come from the mock BC client (the rows are Faker-generated).
+    """
+    from app.integrations.business_central.mock_client import (
+        MockBusinessCentralClient,
+    )
+
+    bc = MockBusinessCentralClient()
+    project = next(p for p in bc.get_projects() if p.customer_id == "cust-014")
+    customer = next(c for c in bc.get_customers() if c.id == "cust-014")
+
+    resp = client.get(PROJECTS_URL, params={"customer_id": "cust-014"})
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert [p["id"] for p in items] == [project.id]
+    assert items[0]["customer"] == {"id": "cust-014", "name": customer.name}
+    assert items[0]["status"] == "Activo"
 
 
 @pytest.mark.integration

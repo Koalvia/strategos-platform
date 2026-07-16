@@ -351,6 +351,30 @@ def test_search_combined_filters(client):
 
 
 @pytest.mark.integration
+def test_search_query_combines_with_facet(client):
+    """The free-text q intersects (AND) with a metadata facet, and misses are empty."""
+    app.dependency_overrides[get_bopa_client] = lambda: MockBopaClient()
+    client.post(f"{BOPA_URL}/sync")
+
+    # "content" matches every document's body; the organisme facet narrows it to
+    # that organisme's documents (2, as in test_search_filters_by_query_...).
+    combined = client.get(
+        f"{BOPA_URL}/documents",
+        params={"q": "content", "organisme": "Ministeri de Finances"},
+    )
+    assert combined.status_code == 200
+    body = combined.json()
+    assert body["total"] == 2
+    assert all(i["organisme"] == "Ministeri de Finances" for i in body["items"])
+
+    # A term in neither the title nor the HTML body yields nothing.
+    none = client.get(
+        f"{BOPA_URL}/documents", params={"q": "zzz-nonexistent-term"}
+    )
+    assert none.json() == {"items": [], "total": 0}
+
+
+@pytest.mark.integration
 def test_search_pagination_total_is_full_count(client):
     """limit/offset page the items while total reflects the full match count."""
     app.dependency_overrides[get_bopa_client] = lambda: MockBopaClient()

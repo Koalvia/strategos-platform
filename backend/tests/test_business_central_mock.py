@@ -59,14 +59,14 @@ def test_port_defines_all_expected_methods():
 
 @pytest.mark.unit
 def test_get_customers_count_type_and_active_split(client):
-    """Exactly 8 customers (7 active, 1 inactive), all typed."""
+    """Exactly 14 customers (13 active, 1 inactive), all typed."""
     customers = client.get_customers()
-    assert len(customers) == 8
+    assert len(customers) == 14
     assert all(isinstance(c, BCCustomer) for c in customers)
 
     active = [c for c in customers if c.status is CustomerStatus.active]
     inactive = [c for c in customers if c.status is CustomerStatus.inactive]
-    assert len(active) == 7
+    assert len(active) == 13
     assert len(inactive) == 1
     assert inactive[0].name == "Clínica Dental Ordino SL"
 
@@ -87,7 +87,7 @@ def test_get_customers_page_slices_and_sets_next_cursor(client):
 def test_get_customers_page_last_page_has_no_next_cursor(client):
     """Once every customer has been returned, ``next_cursor`` is ``None``."""
     page = client.get_customers_page(page_size=100)
-    assert len(page.items) == 8
+    assert len(page.items) == 14
     assert page.next_cursor is None
 
 
@@ -109,7 +109,7 @@ def test_get_customers_page_filters_by_status(client):
     assert page.items[0].name == "Clínica Dental Ordino SL"
 
     page = client.get_customers_page(status=CustomerStatus.active, page_size=100)
-    assert len(page.items) == 7
+    assert len(page.items) == 13
 
 
 @pytest.mark.unit
@@ -138,13 +138,13 @@ def test_get_users_count_type_and_emails(client):
 
 @pytest.mark.unit
 def test_get_projects_count_type_and_active_split(client):
-    """~12 projects, one inactive (belonging to the inactive customer)."""
+    """18 projects, one inactive (belonging to the inactive customer)."""
     projects = client.get_projects()
-    assert len(projects) == 12
+    assert len(projects) == 18
     assert all(isinstance(p, BCProject) for p in projects)
 
     active = [p for p in projects if p.status is ProjectStatus.active]
-    assert len(active) == 11
+    assert len(active) == 17
 
 
 @pytest.mark.unit
@@ -163,7 +163,7 @@ def test_get_projects_page_slices_and_sets_next_cursor(client):
 def test_get_projects_page_last_page_has_no_next_cursor(client):
     """Once every project has been returned, ``next_cursor`` is ``None``."""
     page = client.get_projects_page(page_size=100)
-    assert len(page.items) == 12
+    assert len(page.items) == 18
     assert page.next_cursor is None
 
 
@@ -309,7 +309,7 @@ def test_returned_lists_are_isolated_copies(client):
     """Mutating a returned list does not corrupt shared fixture state."""
     first = client.get_customers()
     first.clear()
-    assert len(client.get_customers()) == 8
+    assert len(client.get_customers()) == 14
 
 
 @pytest.mark.unit

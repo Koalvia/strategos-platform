@@ -119,7 +119,7 @@ def test_clientes_activos_matches_customers_endpoint(frozen_client):
     ).json()["items"]
     kpi = frozen_client.get(SUMMARY_URL).json()["clientes_activos"]
     assert kpi == {"active": len(active), "total": len(customers)}
-    assert kpi == {"active": 7, "total": 8}
+    assert kpi == {"active": 13, "total": 14}
 
 
 @pytest.mark.integration
@@ -131,7 +131,16 @@ def test_proyectos_activos_matches_projects_endpoint(frozen_client):
     ).json()["items"]
     kpi = frozen_client.get(SUMMARY_URL).json()["proyectos_activos"]
     assert kpi == {"active": len(active), "total": len(projects)}
-    assert kpi == {"active": 11, "total": 12}
+    assert kpi == {"active": 17, "total": 18}
+
+
+@pytest.mark.integration
+def test_generated_data_reflected_in_kpis(frozen_client):
+    """The generated clients/projects show up in the KPI totals."""
+    body = frozen_client.get(SUMMARY_URL).json()
+    # 8 original + 6 generated customers; 12 original + 6 generated projects.
+    assert body["clientes_activos"]["total"] == 14
+    assert body["proyectos_activos"]["total"] == 18
 
 
 @pytest.mark.integration

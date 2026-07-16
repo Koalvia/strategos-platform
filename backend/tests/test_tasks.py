@@ -141,6 +141,18 @@ def test_filters_compose(client):
 
 
 @pytest.mark.integration
+def test_project_id_and_assignee_id_compose(client):
+    """project_id + assignee_id intersect (all must match)."""
+    # proj-001 has task-001 (usr-marc) and task-012 (usr-jordi); scoping to
+    # usr-marc keeps only task-001.
+    resp = client.get(
+        TASKS_URL, params={"project_id": "proj-001", "assignee_id": "usr-marc"}
+    )
+    assert resp.status_code == 200
+    assert {t["id"] for t in resp.json()} == {"task-001"}
+
+
+@pytest.mark.integration
 def test_invalid_status_is_rejected(client):
     """An unknown status value is rejected by validation (422)."""
     resp = client.get(TASKS_URL, params={"status": "Bogus"})
