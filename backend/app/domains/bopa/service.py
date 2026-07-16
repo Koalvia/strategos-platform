@@ -351,3 +351,58 @@ class BopaService:
         if document is None:
             raise HTTPException(status_code=404, detail="Document not found")
         return DocumentDetail.model_validate(document)
+
+    def search_documents_by_client(
+        self,
+        *,
+        nombre: str | None = None,
+        nif: str | None = None,
+        proyectos: list[str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> DocumentSearchPage:
+        """Search documents matching any of a client's identifiers or projects.
+
+        Matches case-insensitively (ILIKE) on BopaDocument.title OR BopaDocument.html_content.
+        Returns a paginated DocumentSearchPage containing DocumentSummary items.
+        """
+        projects_list = proyectos or []
+        raw_terms = [nombre, nif] + projects_list
+        terms = [t.strip() for t in raw_terms if t and t.strip()]
+
+        if not terms:
+            return DocumentSearchPage(items=[], total=0)
+
+        #Setup the base query with joined load
+        query = (
+            self.db.query(BopaDocument)
+            .join(BopaDocument.bulletin)
+            .options(contains_eager(BopaDocument.bulletin))
+        )
+
+        # Build the composite OR filter for each term
+        or_conditions = []
+        for term in terms:
+            escaped_term = term.replace("%", "\\%").replace("_", "\\_")
+            like_pattern = f"%{escaped_term}%"
+
+            or_conditions.append(BopaDocument.title.ilike(like_pattern, escape="\\"))
+            or_conditions.append(BopaDocument.html_content.ilike(like_pattern, escape="\\"))
+
+        query = query.filter(or_(*or_conditions))
+
+        # Count, paginate and map back to Pydantic schemas
+        total = query.count()
+        documents = (
+            query.order_by(
+                BopaDocument.article_date.desc(), BopaDocument.id.desc()
+            )
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        return DocumentSearchPage(
+            items=[DocumentSummary.model_validate(d) for d in documents],
+            total=total,
+        )

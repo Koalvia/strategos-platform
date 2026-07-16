@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table"
 import { customersApi } from "@/features/customers/api"
 import { projectsApi } from "@/features/projects/api"
+import { CustomerBopaMatches } from "@/features/customers/customer-bopa-matches"
 import { cn } from "@/lib/utils"
 import type { Customer, Project } from "@/lib/types"
 
@@ -215,6 +216,8 @@ export default function ClienteDetailPage() {
           </Table>
         </div>
       </section>
+
+      <CustomerBopaMatches customerId={id} />
     </div>
   )
 }
