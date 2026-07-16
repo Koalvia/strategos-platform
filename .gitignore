@@ -54,6 +54,10 @@ htmlcov/
 .dmypy.json
 dmypy.json
 
+# Celery beat runtime state (regenerated per-machine, never reproducible)
+celerybeat-schedule
+celerybeat-schedule.db
+
 # Node.js / Next.js
 node_modules/
 .next/

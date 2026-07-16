@@ -83,7 +83,8 @@ def search_documents(
 ):
     """Search/filter stored documents across all bulletins.
 
-    ``q`` substring-matches the title (case-insensitive); ``organisme`` / ``tema``
+    ``q`` substring-matches the title or the stored HTML body (case-insensitive);
+    ``organisme`` / ``tema``
     / ``organisme_pare`` / ``tema_pare`` are exact-match facets; ``year`` filters by
     the owning bulletin; ``date_from`` / ``date_to`` bound ``article_date``.
     ``limit`` / ``offset`` page the result, which carries the total match count.

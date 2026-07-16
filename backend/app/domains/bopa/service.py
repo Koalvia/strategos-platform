@@ -22,6 +22,7 @@ constraint so re-runs stay idempotent.
 from datetime import date, timedelta
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, contains_eager
 
 from app import logger
@@ -267,11 +268,13 @@ class BopaService:
     ) -> DocumentSearchPage:
         """Search/filter stored documents across all bulletins, most recent first.
 
-        ``q`` is a case-insensitive substring match on ``title``; the metadata
-        facets are exact-match equality when given; ``year`` filters via the
-        bulletin join; ``date_from`` / ``date_to`` inclusively bound
-        ``article_date``. Every row carries its bulletin's ``year`` / ``num`` — the
-        bulletin is joined once (and eager-loaded) rather than queried per row.
+        ``q`` is a case-insensitive substring match on the ``title`` **or** the
+        stored HTML body (``html_content``), so a term appearing only in an
+        article's body still matches; the metadata facets are exact-match equality
+        when given; ``year`` filters via the bulletin join; ``date_from`` /
+        ``date_to`` inclusively bound ``article_date``. Every row carries its
+        bulletin's ``year`` / ``num`` — the bulletin is joined once (and
+        eager-loaded) rather than queried per row.
         """
         query = (
             self.db.query(BopaDocument)
@@ -279,7 +282,18 @@ class BopaService:
             .options(contains_eager(BopaDocument.bulletin))
         )
         if q:
-            query = query.filter(BopaDocument.title.ilike(f"%{q}%"))
+            # ``html_content`` is NULL for non-HTML (PDF-only) documents; ILIKE on
+            # NULL yields NULL, which never matches inside the OR, so those still
+            # match on title alone.
+            escaped_q = q.replace("%", "\\%").replace("_", "\\_")
+            like = f"%{escaped_q}%"
+
+            query = query.filter(
+                or_(
+                    BopaDocument.title.ilike(like, escape="\\"),
+                    BopaDocument.html_content.ilike(like, escape="\\"),
+                )
+            )
         if organisme is not None:
             query = query.filter(BopaDocument.organisme == organisme)
         if tema is not None:

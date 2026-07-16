@@ -42,8 +42,8 @@ export default function BopaPage() {
 
   const [filterOptions, setFilterOptions] = useState<BopaFilterOptions>(EMPTY_FILTERS)
 
-  // Debounce the free-text title search so typing doesn't hit the backend on
-  // every keystroke.
+  // Debounce the free-text search (over title and content) so typing doesn't hit
+  // the backend on every keystroke.
   const [debouncedSearch, setDebouncedSearch] = useState("")
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(search), 300)
@@ -150,7 +150,7 @@ export default function BopaPage() {
       <div className="mt-6 flex flex-col gap-4">
         <Input
           type="search"
-          placeholder="Buscar por título..."
+          placeholder="Buscar por título o contenido..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           className="h-11 bg-white sm:max-w-md"

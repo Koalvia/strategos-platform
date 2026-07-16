@@ -256,6 +256,16 @@ def test_search_filters_by_query_organisme_and_tema(client):
     assert by_q.json()["total"] == 2
     assert all("conveni" in i["title"].lower() for i in by_q.json()["items"])
 
+    # q also matches the stored HTML body: "content" appears only in the mock's
+    # canned body ("...Mock BOPA document content..."), never in any fixture
+    # title, so a non-zero result proves body search works — not just titles.
+    by_body = client.get(f"{BOPA_URL}/documents", params={"q": "content"})
+    assert by_body.status_code == 200
+    assert by_body.json()["total"] > 0
+    assert all(
+        "content" not in i["title"].lower() for i in by_body.json()["items"]
+    )
+
     # organisme: exact-match facet (one distinct organisme per bulletin => 2 rows).
     by_org = client.get(
         f"{BOPA_URL}/documents", params={"organisme": "Ministeri de Finances"}
