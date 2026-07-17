@@ -61,6 +61,7 @@ def get_customer(
     service = CustomersService(db, bc_client)
     return service.get_customer(customer_id)
 
+
 @router.get("/{customer_id}/bopa-matches", response_model=DocumentSearchPage)
 def get_customer_bopa_matches(
     customer_id: str,

@@ -121,7 +121,7 @@ export function CustomerBopaMatches({ customerId }: { customerId: string }) {
           </div>
         ) : documents.length === 0 ? (
           <div className="px-6 py-12 text-center text-sm text-slate-500">
-            "No se han encontrado documentos BOPA coincidentes."
+            No se han encontrado documentos BOPA coincidentes.
           </div>
         ) : (
           <>
