@@ -12,16 +12,14 @@ from app.core.dependencies import get_bopa_client, get_business_central_client
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
-
+from app.domains.bopa.schemas import DocumentSearchPage
+from app.domains.bopa.service import BopaService
 from app.integrations.bopa.client import BopaClient
 from app.integrations.business_central.client import (
     DEFAULT_CUSTOMERS_PAGE_SIZE,
     BusinessCentralClient,
 )
 from app.integrations.business_central.models import CustomerStatus
-
-from app.domains.bopa.schemas import DocumentSearchPage
-from app.domains.bopa.service import BopaService
 
 from .schemas import CustomerPageResponse, CustomerResponse
 from .service import CustomersService
