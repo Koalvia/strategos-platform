@@ -11,6 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db.session import get_db
+from app.domains.auth.models import User
+from app.domains.auth.utils import get_verified_user
 from app.domains.bopa import tasks
 from app.domains.bopa.models import (
     BopaAnalysisLog,
@@ -22,16 +24,39 @@ from app.main import app
 BOPA_MATCHES_URL_TEMPLATE = "/api/v1/customers/{customer_id}/bopa-matches"
 
 
+@pytest.fixture
+def authenticated_client(db_session):
+    """An authenticated test client."""
+    user = User(
+        name="Test User",
+        email="test@example.com",
+        hashed_password="not-a-real-hash",
+        is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_verified_user] = lambda: user
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
 # --------------------------------------------------------------------------- #
 # Basic functionality
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.integration
-def test_endpoint_returns_search_page_shape(client):
+def test_endpoint_returns_search_page_shape(authenticated_client):
     """The endpoint returns a DocumentSearchPage with items and total."""
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url)
+    resp = authenticated_client.get(url)
     assert resp.status_code == 200
     body = resp.json()
     assert "items" in body
@@ -41,10 +66,10 @@ def test_endpoint_returns_search_page_shape(client):
 
 
 @pytest.mark.integration
-def test_document_summary_shape(client):
+def test_document_summary_shape(authenticated_client):
     """Each result item has the expected DocumentSummary fields."""
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url)
+    resp = authenticated_client.get(url)
     assert resp.status_code == 200
     body = resp.json()
     if body["items"]:
@@ -65,14 +90,14 @@ def test_document_summary_shape(client):
 
 
 @pytest.mark.integration
-def test_search_matches_customer_name(client):
+def test_search_matches_customer_name(authenticated_client):
     """Results include documents matching the customer's name.
 
     Customer cust-001 is "Fontaneria Puigcerdà SL". BOPA fixtures are seeded
     with documents; if any contain "Puigcerdà", they should appear.
     """
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url)
+    resp = authenticated_client.get(url)
     assert resp.status_code == 200
     body = resp.json()
     # The mock BOPA client has synthetic documents; if they contain this
@@ -83,28 +108,28 @@ def test_search_matches_customer_name(client):
 
 
 @pytest.mark.integration
-def test_search_includes_nif(client):
+def test_search_includes_nif(authenticated_client):
     """Results include documents matching the customer's NIF.
 
     Customer cust-001 has NIF "A123456". BOPA fixtures with this NIF should
     appear in results.
     """
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url)
+    resp = authenticated_client.get(url)
     assert resp.status_code == 200
     body = resp.json()
     assert "items" in body
 
 
 @pytest.mark.integration
-def test_search_includes_project_names(client):
+def test_search_includes_project_names(authenticated_client):
     """Results include documents matching any of the customer's projects.
 
     Customer cust-001 has associated projects; BOPA documents matching any
     project name should be included.
     """
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url)
+    resp = authenticated_client.get(url)
     assert resp.status_code == 200
     body = resp.json()
     assert "items" in body
@@ -116,34 +141,34 @@ def test_search_includes_project_names(client):
 
 
 @pytest.mark.integration
-def test_limit_parameter_bounds_results(client):
+def test_limit_parameter_bounds_results(authenticated_client):
     """?limit= constrains the returned item count."""
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url, params={"limit": 5})
+    resp = authenticated_client.get(url, params={"limit": 5})
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["items"]) <= 5
 
 
 @pytest.mark.integration
-def test_limit_parameter_validates_range(client):
+def test_limit_parameter_validates_range(authenticated_client):
     """?limit= must be between 1 and 200."""
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url, params={"limit": 0})
+    resp = authenticated_client.get(url, params={"limit": 0})
     assert resp.status_code == 422  # Validation error
 
-    resp = client.get(url, params={"limit": 201})
+    resp = authenticated_client.get(url, params={"limit": 201})
     assert resp.status_code == 422
 
 
 @pytest.mark.integration
-def test_offset_parameter_skips_results(client):
+def test_offset_parameter_skips_results(authenticated_client):
     """?offset= skips the first N results."""
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp_first = client.get(url, params={"limit": 10, "offset": 0})
+    resp_first = authenticated_client.get(url, params={"limit": 10, "offset": 0})
     assert resp_first.status_code == 200
 
-    resp_second = client.get(
+    resp_second = authenticated_client.get(
         url, params={"limit": 10, "offset": 5}
     )
     assert resp_second.status_code == 200
@@ -157,10 +182,10 @@ def test_offset_parameter_skips_results(client):
 
 
 @pytest.mark.integration
-def test_offset_parameter_validates_non_negative(client):
+def test_offset_parameter_validates_non_negative(authenticated_client):
     """?offset= must be non-negative."""
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url, params={"offset": -1})
+    resp = authenticated_client.get(url, params={"offset": -1})
     assert resp.status_code == 422
 
 
@@ -170,10 +195,10 @@ def test_offset_parameter_validates_non_negative(client):
 
 
 @pytest.mark.integration
-def test_unknown_customer_returns_404(client):
+def test_unknown_customer_returns_404(authenticated_client):
     """A non-existent customer_id returns 404."""
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-999")
-    resp = client.get(url)
+    resp = authenticated_client.get(url)
     assert resp.status_code == 404
     assert "Customer not found" in resp.json()["detail"]
 
@@ -201,13 +226,13 @@ def test_endpoint_requires_authentication(db_session):
 
 
 @pytest.mark.integration
-def test_total_reflects_all_matches(client):
+def test_total_reflects_all_matches(authenticated_client):
     """?total= reflects the count of all matching documents, not just the page.
 
     Fetch with a small limit, then verify total > len(items).
     """
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url, params={"limit": 2})
+    resp = authenticated_client.get(url, params={"limit": 2})
     assert resp.status_code == 200
     body = resp.json()
     # If there are any matches, total should be >= len(items).
@@ -215,7 +240,7 @@ def test_total_reflects_all_matches(client):
 
 
 @pytest.mark.integration
-def test_empty_results_when_no_matches(client):
+def test_empty_results_when_no_matches(authenticated_client):
     """A customer with no BOPA matches returns empty items but valid total=0.
 
     We test with a contrived customer ID; if a real customer has no matches,
@@ -223,7 +248,7 @@ def test_empty_results_when_no_matches(client):
     """
     # Using an existing customer; if they have no matches, we get empty items.
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-013")
-    resp = client.get(url)
+    resp = authenticated_client.get(url)
     assert resp.status_code == 200
     body = resp.json()
     # Even if no documents match, the response is valid.
@@ -237,10 +262,10 @@ def test_empty_results_when_no_matches(client):
 
 
 @pytest.mark.integration
-def test_results_ordered_by_article_date_descending(client):
+def test_results_ordered_by_article_date_descending(authenticated_client):
     """Results are ordered by article_date descending (most recent first)."""
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-001")
-    resp = client.get(url, params={"limit": 100})
+    resp = authenticated_client.get(url, params={"limit": 100})
     assert resp.status_code == 200
     body = resp.json()
     if len(body["items"]) > 1:
@@ -254,10 +279,10 @@ def test_results_ordered_by_article_date_descending(client):
 
 
 @pytest.mark.integration
-def test_endpoint_works_for_generated_customer(client):
+def test_endpoint_works_for_generated_customer(authenticated_client):
     """A generated customer (cust-014) with generated projects works."""
     url = BOPA_MATCHES_URL_TEMPLATE.format(customer_id="cust-014")
-    resp = client.get(url)
+    resp = authenticated_client.get(url)
     # Generated customers exist; endpoint should not crash.
     assert resp.status_code == 200
     body = resp.json()
@@ -272,12 +297,14 @@ class MockBCClient:
     def get_projects(self):
         return []
 
+
 @pytest.fixture
 def _wire_analysis_task(db_session, monkeypatch):
     """Point the analysis task's session and BC client at the test fixtures."""
     monkeypatch.setattr(tasks, "SessionLocal", lambda: db_session)
     monkeypatch.setattr(tasks, "get_business_central_client", lambda: MockBCClient())
     return db_session
+
 
 @pytest.mark.integration
 def test_analyze_bopa_matches_persists(_wire_analysis_task, bopa_bulletin_factory):
