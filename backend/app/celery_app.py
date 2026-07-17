@@ -42,4 +42,10 @@ celery.conf.beat_schedule = {
         # comfortably after BOPA's own midnight-anchored regular-issue publish.
         "schedule": crontab(hour=6, minute=0),
     },
+    "bopa-analyze-daily": {
+        "task": "bopa.analyze_matches",
+        # 07:00 UTC — 1 hour after sync completes, analyzes new bulletins against
+        # customers and projects from Business Central, stores matches in BopaMatch.
+        "schedule": crontab(hour=7, minute=0),
+    },
 }
