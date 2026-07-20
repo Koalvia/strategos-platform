@@ -103,7 +103,7 @@ def generate_obligation_alerts(reference_date: date | None = None):
             client_name = customer_names.get(customer_id, "")
             message = (
                 f"{project_name} · {client_name} · "
-                f"vence {instance.fecha_notificacion.isoformat()}"
+                f"deadline {instance.fecha_notificacion.isoformat()}"
             )
 
             service.create_for_obligation(
