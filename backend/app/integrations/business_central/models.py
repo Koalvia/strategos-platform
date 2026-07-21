@@ -200,6 +200,12 @@ class BCProjectObligation(BaseModel):
     obligation is filed, and any instance BC still returns without a ``dueDate``
     remains undated (``Sin fecha``) — both are handled by the obligations domain.
     ``status`` has no BC source and is left unset (Strategos derives its own).
+
+    ``fecha_notificacion`` is the date on which the firm should be alerted about
+    the obligation (drives the daily obligation-alert task). BC has **not** yet
+    implemented this field upstream, so it is Optional with a ``None`` default:
+    live payloads that omit it still validate (defensive), and the live client
+    maps it through once BC exposes it.
     """
 
     id: str
@@ -208,4 +214,5 @@ class BCProjectObligation(BaseModel):
     subject: bool | None = None
     due_date: date | None = None
     submission_date: date | None = None
+    fecha_notificacion: date | None = None
     status: ObligationStatus | None = None

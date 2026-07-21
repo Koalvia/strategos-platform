@@ -104,7 +104,7 @@ export function AppSidebar({ user, onLogout }: AppSidebarProps) {
                         )}
                       />
                       <span className="flex-1">{item.label}</span>
-                      {item.href === "/alertas" && unreadCount > 0 && (
+                      {item.href === "/alerts" && unreadCount > 0 && (
                         <span
                           className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-semibold text-white"
                           aria-label={`${unreadCount} alertas sin leer`}

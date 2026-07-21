@@ -529,6 +529,9 @@ class LiveBusinessCentralClient(BusinessCentralClient):
                     subject=row.get("subject"),
                     due_date=_parse_date(row.get("dueDate")),
                     submission_date=_parse_date(row.get("submissionDate")),
+                    # BC has not implemented this field yet; ``get`` returns None
+                    # until it does, so parsing never fails (see BCProjectObligation).
+                    fecha_notificacion=_parse_date(row.get("notificationDate")),
                 )
             )
         return instances

@@ -32,7 +32,13 @@ else:
 
 # Auto-discover tasks in domain modules
 # Add task modules here as you create them
-celery.autodiscover_tasks(["app.domains.auth.tasks", "app.domains.bopa.tasks"])
+celery.autodiscover_tasks(
+    [
+        "app.domains.auth.tasks",
+        "app.domains.bopa.tasks",
+        "app.domains.alerts.tasks",
+    ]
+)
 
 # Periodic tasks (Celery Beat)
 celery.conf.beat_schedule = {
@@ -47,5 +53,11 @@ celery.conf.beat_schedule = {
         # 07:00 UTC — 1 hour after sync completes, analyzes new bulletins against
         # customers and projects from Business Central, stores matches in BopaMatch.
         "schedule": crontab(hour=7, minute=0),
+    },
+    "obligations-generate-alerts-daily": {
+        "task": "alerts.generate_obligation_alerts",
+        # 08:00 UTC — after the BOPA jobs; turns due BC obligations into alerts and
+        # auto-dismisses ones already filed in the ERP.
+        "schedule": crontab(hour=8, minute=0),
     },
 }

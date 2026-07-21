@@ -3,9 +3,16 @@
 import { useCallback, useEffect, useState } from "react"
 import { ExternalLink, Loader2 } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { alertsApi, type Alert, type AlertStatus } from "@/features/alerts/api"
+
+// Spanish label for each alert source, shown as a small badge on every row.
+const ALERT_TYPE_LABEL: Record<Alert["alert_type"], string> = {
+  BOPA: "BOPA",
+  OBLIGATION: "Obligación",
+}
 
 // Tabs mirror the alert lifecycle. UI copy is Spanish to match the rest of the app.
 const TABS: { value: AlertStatus; label: string }[] = [
@@ -96,7 +103,7 @@ export function AlertsView() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Alertas</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Coincidencias de clientes detectadas en el BOPA.
+            Notificaciones del BOPA y obligaciones de Business Central.
           </p>
         </div>
         {status === "new" && (
@@ -142,29 +149,45 @@ export function AlertsView() {
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {alert.matched_term ?? alert.customer_id}
-                        </p>
-                        <p className="mt-0.5 truncate text-sm text-slate-600">
-                          {alert.document_title ?? "Documento del BOPA"}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {formatDate(alert.article_date)}
-                          {alert.source_url && (
-                            <>
-                              {" · "}
-                              <a
-                                href={alert.source_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-[#caa53d] hover:underline"
-                              >
-                                Ver documento
-                                <ExternalLink className="size-3" />
-                              </a>
-                            </>
-                          )}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="secondary"
+                            className="shrink-0 text-[10px] uppercase tracking-wide"
+                          >
+                            {ALERT_TYPE_LABEL[alert.alert_type]}
+                          </Badge>
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {alert.title ?? alert.customer_id}
+                          </p>
+                        </div>
+                        {alert.alert_type === "OBLIGATION" ? (
+                          <p className="mt-0.5 truncate text-sm text-slate-600">
+                            {alert.message ?? "Obligación"}
+                          </p>
+                        ) : (
+                          <>
+                            <p className="mt-0.5 truncate text-sm text-slate-600">
+                              {alert.document_title ?? "Documento del BOPA"}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {formatDate(alert.article_date)}
+                              {alert.source_url && (
+                                <>
+                                  {" · "}
+                                  <a
+                                    href={alert.source_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-[#caa53d] hover:underline"
+                                  >
+                                    Ver documento
+                                    <ExternalLink className="size-3" />
+                                  </a>
+                                </>
+                              )}
+                            </p>
+                          </>
+                        )}
                       </div>
 
                       <div className="flex shrink-0 items-center gap-2">

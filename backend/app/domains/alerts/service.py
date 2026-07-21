@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.domains.bopa.models import BopaMatch
 
-from .models import Alert, AlertStatus
+from .models import Alert, AlertStatus, AlertType
 from .schemas import AlertPage, AlertResponse
 
 
@@ -105,7 +105,34 @@ class AlertsService:
         alert = Alert(
             user_id=None,
             customer_id=match.customer_id,
+            alert_type=AlertType.BOPA,
             bopa_match_id=match.id,
+            status=AlertStatus.NEW,
+        )
+        self.db.add(alert)
+        return alert
+
+    def create_for_obligation(
+        self,
+        bc_obligation_id: str,
+        customer_id: str,
+        title: str,
+        message: str,
+    ) -> Alert:
+        """Build and stage an OBLIGATION alert (the caller commits).
+
+        This performs **no** idempotency query on purpose: the daily task guards
+        duplicates with an in-memory set built from a single bulk read, and the
+        ``uq_alert_bc_obligation`` unique constraint is the strict DB-level
+        backstop. ``user_id`` is left NULL — the alert is for all users.
+        """
+        alert = Alert(
+            user_id=None,
+            customer_id=customer_id,
+            alert_type=AlertType.OBLIGATION,
+            bc_obligation_id=bc_obligation_id,
+            title=title,
+            message=message,
             status=AlertStatus.NEW,
         )
         self.db.add(alert)
@@ -113,17 +140,43 @@ class AlertsService:
 
     @staticmethod
     def _to_response(alert: Alert) -> AlertResponse:
-        """Map an alert (with its match/document) to the API response shape."""
+        """Map an alert to the API response shape.
+
+        OBLIGATION alerts use their stored ``title``/``message``; BOPA alerts
+        resolve display from the linked match/document and mirror it onto the
+        unified ``title``/``message`` pair too.
+        """
+        if alert.alert_type is AlertType.OBLIGATION:
+            return AlertResponse(
+                id=alert.id,
+                customer_id=alert.customer_id,
+                alert_type=alert.alert_type,
+                status=alert.status,
+                created_at=alert.created_at,
+                title=alert.title,
+                message=alert.message,
+                matched_term=None,
+                document_id=None,
+                document_title=None,
+                article_date=None,
+                source_url=None,
+            )
+
         match = alert.bopa_match
         document = match.document if match is not None else None
+        matched_term = match.matched_term if match is not None else None
+        document_title = document.title if document is not None else None
         return AlertResponse(
             id=alert.id,
             customer_id=alert.customer_id,
+            alert_type=alert.alert_type,
             status=alert.status,
             created_at=alert.created_at,
-            matched_term=match.matched_term if match is not None else None,
+            title=matched_term,
+            message=document_title,
+            matched_term=matched_term,
             document_id=document.id if document is not None else None,
-            document_title=document.title if document is not None else None,
+            document_title=document_title,
             article_date=document.article_date if document is not None else None,
             source_url=document.source_url if document is not None else None,
         )

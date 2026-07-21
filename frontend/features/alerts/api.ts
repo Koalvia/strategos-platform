@@ -5,14 +5,21 @@
 // UI copy: new = "Sin leer", viewed = "Vistas", discarded = "Descartadas".
 export type AlertStatus = "new" | "viewed" | "discarded"
 
+// The source that raised the alert. Mirrors the backend `AlertType` enum values.
+export type AlertType = "BOPA" | "OBLIGATION"
+
 // A single alert as returned by the backend. Fields mirror the backend
-// `AlertResponse` schema (snake_case); the display fields are resolved from the
-// linked BOPA match / document.
+// `AlertResponse` schema (snake_case). `title`/`message` are unified display
+// fields for either type; the remaining fields are BOPA-specific (null for
+// OBLIGATION alerts, whose display comes from title/message).
 export interface Alert {
   id: number
   customer_id: string
+  alert_type: AlertType
   status: AlertStatus
   created_at: string | null
+  title: string | null
+  message: string | null
   matched_term: string | null
   document_id: number | null
   document_title: string | null

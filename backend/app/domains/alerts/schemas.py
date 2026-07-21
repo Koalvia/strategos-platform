@@ -1,18 +1,21 @@
 """Pydantic v2 schemas for the Alerts domain.
 
-An alert is platform-native (stored locally) but its human-readable content is
-resolved from the linked :class:`~app.domains.bopa.models.BopaMatch` and its
-document — the matched term, the document title/date and its source URL — so the
-frontend can render a notification without extra lookups. The service builds
-:class:`AlertResponse` from the ORM graph rather than mapping straight from a
-single table, so this is a plain response model (not ``from_attributes``).
+An alert is platform-native (stored locally). Its human-readable content depends
+on the ``alert_type``: BOPA alerts resolve their display from the linked
+:class:`~app.domains.bopa.models.BopaMatch` and its document (matched term,
+document title/date, source URL); OBLIGATION alerts carry denormalized
+``title``/``message`` written at creation. Both types also expose a unified
+``title``/``message`` pair so the frontend can render either without extra
+lookups. The service builds :class:`AlertResponse` from the ORM graph rather than
+mapping straight from a single table, so this is a plain response model (not
+``from_attributes``).
 """
 
 from datetime import datetime
 
 from pydantic import BaseModel
 
-from .models import AlertStatus
+from .models import AlertStatus, AlertType
 
 
 class AlertResponse(BaseModel):
@@ -20,9 +23,14 @@ class AlertResponse(BaseModel):
 
     id: int
     customer_id: str
+    alert_type: AlertType
     status: AlertStatus
     created_at: datetime | None
-    # Display fields resolved from the linked BOPA match / document.
+    # Unified display fields: for BOPA these mirror matched_term / document_title;
+    # for OBLIGATION they carry the stored obligation headline / detail.
+    title: str | None
+    message: str | None
+    # BOPA-specific display fields (None for OBLIGATION alerts).
     matched_term: str | None
     document_id: int | None
     document_title: str | None

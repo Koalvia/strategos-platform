@@ -62,6 +62,8 @@ celerybeat-schedule.db
 node_modules/
 .next/
 out/
+# TypeScript incremental build cache (machine-specific, must not be committed)
+*.tsbuildinfo
 .nuxt/
 dist/
 .cache/
