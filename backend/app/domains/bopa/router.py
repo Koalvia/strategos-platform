@@ -29,7 +29,7 @@ from .schemas import (
     SyncResult,
 )
 from .service import BopaService
-from .tasks import analyze_bopa_matches
+from .tasks import analyze_bopa_matches, analyze_bopa_matches_for_customer
 
 router = APIRouter(prefix="/bopa", tags=["bopa"])
 
@@ -145,24 +145,38 @@ def sync_bopa(
 
 @router.post("/scan", response_model=ScanResult)
 def scan_bopa(
+    customer_id: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bopa_client: BopaClient = Depends(get_bopa_client),
 ):
-    """Run the full BOPA scan on demand: sync, analyze matches, generate alerts.
+    """Run the BOPA scan on demand: sync, then analyze matches.
 
-    This is what the "Iniciar Escaneo" button triggers. It mirrors the pipeline
-    that runs when a Celery worker starts (see ``app.celery_app``) and the
-    ``scripts/run_bopa_pipeline`` helper, but runs **synchronously** in the
-    request: there is no Celery result backend to poll, so running inline lets the
-    caller get the refreshed state back in one round-trip. Every step is
-    idempotent, so re-scanning only adds newly-published bulletins, newly-matched
-    documents and newly-due obligation alerts.
+    This is what the "Iniciar Escaneo" button triggers. It runs **synchronously**
+    in the request: there is no Celery result backend to poll, so running inline
+    lets the caller get the refreshed state back in one round-trip. Every step is
+    idempotent, so re-scanning only adds newly-published bulletins and
+    newly-matched documents.
+
+    - **Scoped** (``customer_id`` given, e.g. from a customer detail page): sync
+      the latest bulletins, then analyze **only that customer** against every
+      stored document (see ``analyze_bopa_matches_for_customer``). The global
+      obligation-alerts job is *not* run — the scoped analyzer raises its own
+      BOPA-match alerts inline, and obligation alerts are a separate global job.
+    - **Global** (no ``customer_id``): sync, analyze every unanalyzed bulletin
+      against all customers/projects, then generate obligation alerts. Mirrors the
+      pipeline that runs on worker startup (see ``app.celery_app``) and the
+      ``scripts/run_bopa_pipeline`` helper.
     """
     service = BopaService(db, bopa_client)
     sync_result = service.sync_latest()
-    matches_created = analyze_bopa_matches()
-    generate_obligation_alerts()
+
+    if customer_id is not None:
+        matches_created = analyze_bopa_matches_for_customer(customer_id)
+    else:
+        matches_created = analyze_bopa_matches()
+        generate_obligation_alerts()
+
     return ScanResult(
         bulletins_synced=sync_result.bulletins_synced,
         documents_synced=sync_result.documents_synced,

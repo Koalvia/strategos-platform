@@ -3,10 +3,11 @@ import { apiFetch, ApiError } from "@/lib/api-client"
 import { getAuthToken } from "@/lib/auth"
 import type { BopaScanResult } from "@/features/bopa/api"
 
-// Triggers a full BOPA scan on the backend (sync -> analyze -> alerts) and
-// returns its outcome. Runs synchronously on the backend, so the response
-// arrives once the scan has persisted its results.
-export async function POST() {
+// Triggers a BOPA scan on the backend (sync -> analyze) and returns its outcome.
+// Runs synchronously on the backend, so the response arrives once the scan has
+// persisted its results. An optional `customer_id` query param is forwarded
+// verbatim to scope the scan to a single customer.
+export async function POST(request: Request) {
   try {
     const token = await getAuthToken()
 
@@ -14,7 +15,10 @@ export async function POST() {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
-    const data = await apiFetch<BopaScanResult>("/api/v1/bopa/scan", {
+    const customerId = new URL(request.url).searchParams.get("customer_id")
+    const query = customerId ? `?customer_id=${encodeURIComponent(customerId)}` : ""
+
+    const data = await apiFetch<BopaScanResult>(`/api/v1/bopa/scan${query}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

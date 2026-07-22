@@ -96,10 +96,15 @@ export const bopaApi = {
     return response.json()
   },
 
-  // Trigger a full BOPA scan on the backend and wait for it to finish. Used by
-  // the "Iniciar Escaneo" button to re-run the pipeline on demand.
-  async runScan(): Promise<{ success: boolean; data?: BopaScanResult; message?: string }> {
-    const response = await fetch("/api/bopa/scan", { method: "POST" })
+  // Trigger a BOPA scan on the backend and wait for it to finish. Used by the
+  // "Iniciar Escaneo" button to re-run the pipeline on demand. Pass a
+  // `customerId` to scope the analysis to a single customer (the button on a
+  // customer detail page); omit it for a global scan.
+  async runScan(
+    customerId?: string,
+  ): Promise<{ success: boolean; data?: BopaScanResult; message?: string }> {
+    const query = customerId ? `?customer_id=${encodeURIComponent(customerId)}` : ""
+    const response = await fetch(`/api/bopa/scan${query}`, { method: "POST" })
     return response.json()
   },
 }

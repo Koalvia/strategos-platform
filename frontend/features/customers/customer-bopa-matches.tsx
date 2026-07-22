@@ -30,6 +30,8 @@ export function CustomerBopaMatches({ customerId }: { customerId: string }) {
   // Set when a re-scan finished without surfacing any new match, so we can keep
   // the existing results on screen and add a small "nothing new" note.
   const [noNewMatches, setNoNewMatches] = useState(false)
+  // Visible error state when the re-scan API call or post-scan fetch fails.
+  const [scanError, setScanError] = useState<string | null>(null)
 
   const fetchPage = useCallback(
     async (targetOffset: number): Promise<BopaDocumentPage> => {
@@ -77,9 +79,14 @@ export function CustomerBopaMatches({ customerId }: { customerId: string }) {
   const handleRescan = async () => {
     setScanning(true)
     setNoNewMatches(false)
+    setScanError(null)
     const previousTotal = total
     try {
-      await bopaApi.runScan()
+      const result = await bopaApi.runScan(customerId)
+      if (!result.success) {
+        setScanError(result.message ?? "No se pudo completar el escaneo. Inténtalo de nuevo.")
+        return
+      }
       const page = await fetchPage(0)
       setOffset(0)
       setDocuments(page.items)
@@ -87,6 +94,7 @@ export function CustomerBopaMatches({ customerId }: { customerId: string }) {
       if (page.total <= previousTotal) setNoNewMatches(true)
     } catch (error) {
       console.error("[Strategos] BOPA re-scan error:", error)
+      setScanError("No se pudo completar el escaneo. Inténtalo de nuevo.")
     } finally {
       setScanning(false)
     }
@@ -95,12 +103,19 @@ export function CustomerBopaMatches({ customerId }: { customerId: string }) {
   const pageCount = Math.ceil(total / PAGE_SIZE)
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1
 
+  // The "no new matches" / error notices belong to the last re-scan, not to a
+  // page of results — clear them when the user navigates so they don't linger
+  // stale alongside a different page.
   const handlePrevious = () => {
+    setNoNewMatches(false)
+    setScanError(null)
     setOffset(Math.max(0, offset - PAGE_SIZE))
   }
 
   const handleNext = () => {
     if (offset + PAGE_SIZE < total) {
+      setNoNewMatches(false)
+      setScanError(null)
       setOffset(offset + PAGE_SIZE)
     }
   }
@@ -139,6 +154,12 @@ export function CustomerBopaMatches({ customerId }: { customerId: string }) {
         </p>
       )}
 
+      {scanError && (
+        <p className="mt-2 text-xs font-medium text-red-500">
+          {scanError}
+        </p>
+      )}
+
       <div className="mt-4 rounded-lg border border-slate-200 bg-white w-full">
         {loading ? (
           /* Loading state */
@@ -170,6 +191,9 @@ export function CustomerBopaMatches({ customerId }: { customerId: string }) {
                       <div className="text-xs text-slate-500">{doc.document_name}</div>
                     </TableCell>
                     <TableCell className="px-6 py-4 text-sm text-slate-700">
+                      {/* TODO: link to a bulletin-scoped view (e.g. /bopa?year=&num=)
+                          once one exists — there is no bulletin detail route yet,
+                          so this falls back to the generic BOPA list. */}
                       <Link href="/bopa" className="font-medium hover:underline">
                         {doc.bulletin_year} núm. {doc.bulletin_num}
                       </Link>
@@ -181,6 +205,9 @@ export function CustomerBopaMatches({ customerId }: { customerId: string }) {
                       {new Date(doc.article_date).toLocaleDateString("es-ES")}
                     </TableCell>
                     <TableCell className="px-6 py-4 text-sm">
+                      {/* TODO: `fromCustomer` is reserved for a "back to customer"
+                          breadcrumb on the BOPA detail page; (app)/bopa/[id] does
+                          not consume it yet. */}
                       <Link
                         href={`/bopa/${doc.id}?fromCustomer=${customerId}`}
                         className="text-blue-600 hover:underline"

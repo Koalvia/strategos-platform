@@ -65,9 +65,40 @@ celery.conf.beat_schedule = {
 }
 
 
+# Short-lived Redis lock so only the first worker in the window queues the
+# startup pipeline. ``worker_ready`` fires once per worker process, so a
+# multi-process (``--concurrency`` with prefork) or multi-replica deployment
+# would otherwise queue N identical chains on every restart. The TTL is small
+# enough that a genuinely later restart still re-queues.
+_STARTUP_LOCK_KEY = "bopa:startup-pipeline-lock"
+_STARTUP_LOCK_TTL = 300  # seconds
+
+
+def _claim_startup_run() -> bool:
+    """Return True if this process should queue the startup pipeline.
+
+    Testing runs Celery eagerly with no Redis, and the guard is irrelevant there,
+    so it always claims. In production a ``SET NX EX`` lets only the first worker
+    in the TTL window win. Fails **open**: if Redis is unreachable we still queue
+    rather than silently skip the pipeline.
+    """
+    if os.environ.get("TESTING") == "1":
+        return True
+    try:
+        import redis
+
+        client = redis.from_url(settings.REDIS_URL)
+        return bool(
+            client.set(_STARTUP_LOCK_KEY, "1", nx=True, ex=_STARTUP_LOCK_TTL)
+        )
+    except Exception:  # noqa: BLE001 - never let lock trouble block the pipeline
+        logger.warning("Startup pipeline lock unavailable; queuing without it.")
+        return True
+
+
 @worker_ready.connect
 def run_bopa_pipeline_on_startup(sender=None, **kwargs):
-    """Run the full BOPA scan every time a worker becomes ready.
+    """Run the full BOPA scan when the first worker becomes ready.
 
     Mirrors the manual "Iniciar Escaneo" button (and ``scripts/run_bopa_pipeline``):
     sync the latest bulletins, analyze them against customers/projects to produce
@@ -76,8 +107,14 @@ def run_bopa_pipeline_on_startup(sender=None, **kwargs):
     worker without passing results between them, and without blocking startup.
     Every step is idempotent — it only touches newly-published bulletins,
     newly-matched documents and newly-due obligations — so firing it on every
-    restart is safe.
+    restart is safe; a Redis lock (see ``_claim_startup_run``) keeps a
+    multi-worker deployment from queuing the chain more than once per restart.
     """
+    if not _claim_startup_run():
+        logger.info(
+            "Worker ready: BOPA pipeline already queued by another worker; skipping."
+        )
+        return
     chain(
         celery.signature("bopa.sync_daily", immutable=True),
         celery.signature("bopa.analyze_matches", immutable=True),
