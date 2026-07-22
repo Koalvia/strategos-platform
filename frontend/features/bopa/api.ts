@@ -37,6 +37,15 @@ export interface BopaFilterOptions {
   tema_pare: string[]
 }
 
+// Outcome of a full BOPA scan (POST /bopa/scan). Mirrors the backend
+// `ScanResult` schema: the sync counts plus how many new matches were produced.
+export interface BopaScanResult {
+  bulletins_synced: number
+  documents_synced: number
+  documents_failed: number
+  matches_created: number
+}
+
 export interface SearchDocumentsParams {
   q?: string
   organisme?: string
@@ -84,6 +93,13 @@ export const bopaApi = {
     id: string,
   ): Promise<{ success: boolean; data?: BopaDocumentDetail; message?: string }> {
     const response = await fetch(`/api/bopa/documents/${encodeURIComponent(id)}`)
+    return response.json()
+  },
+
+  // Trigger a full BOPA scan on the backend and wait for it to finish. Used by
+  // the "Iniciar Escaneo" button to re-run the pipeline on demand.
+  async runScan(): Promise<{ success: boolean; data?: BopaScanResult; message?: string }> {
+    const response = await fetch("/api/bopa/scan", { method: "POST" })
     return response.json()
   },
 }

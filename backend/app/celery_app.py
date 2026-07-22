@@ -1,9 +1,11 @@
 import os
 
 import sentry_sdk
-from celery import Celery
+from celery import Celery, chain
 from celery.schedules import crontab
+from celery.signals import worker_ready
 
+from app import logger
 from app.core.config import settings
 
 # Initialize Sentry for Celery worker (if configured and not testing)
@@ -61,3 +63,24 @@ celery.conf.beat_schedule = {
         "schedule": crontab(hour=8, minute=0),
     },
 }
+
+
+@worker_ready.connect
+def run_bopa_pipeline_on_startup(sender=None, **kwargs):
+    """Run the full BOPA scan every time a worker becomes ready.
+
+    Mirrors the manual "Iniciar Escaneo" button (and ``scripts/run_bopa_pipeline``):
+    sync the latest bulletins, analyze them against customers/projects to produce
+    ``BopaMatch`` rows, then generate obligation alerts. The three steps run as a
+    chain of immutable signatures (``.si``-style) so they execute in order on the
+    worker without passing results between them, and without blocking startup.
+    Every step is idempotent — it only touches newly-published bulletins,
+    newly-matched documents and newly-due obligations — so firing it on every
+    restart is safe.
+    """
+    chain(
+        celery.signature("bopa.sync_daily", immutable=True),
+        celery.signature("bopa.analyze_matches", immutable=True),
+        celery.signature("alerts.generate_obligation_alerts", immutable=True),
+    ).apply_async()
+    logger.info("Worker ready: queued BOPA pipeline (sync -> analyze -> alerts).")

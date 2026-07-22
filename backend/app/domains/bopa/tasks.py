@@ -29,11 +29,15 @@ def sync_bopa_daily():
         db.close()
 
 @celery.task(name="bopa.analyze_matches")
-def analyze_bopa_matches():
+def analyze_bopa_matches() -> int:
     """Analyze unanalyzed BOPA bulletins against customers and projects.
 
     Stores matches in the BopaMatch table and records the analysis in BopaAnalysisLog
     to prevent duplicate processing. Runs outside FastAPI's request scope.
+
+    Returns the number of new matches created (0 when there is nothing new to
+    analyze), so on-demand callers (e.g. the ``POST /bopa/scan`` button) can report
+    how many were found.
     """
     db = SessionLocal()
     try:
@@ -47,7 +51,7 @@ def analyze_bopa_matches():
 
         if not unanalyzed_bulletins:
             logger.info("BOPA analysis: No new bulletins to analyze.")
-            return
+            return 0
 
         # Fetch customers and projects from Business Central
         bc_client = get_business_central_client()
@@ -132,6 +136,7 @@ def analyze_bopa_matches():
             f"BOPA analysis complete: Processed {len(unanalyzed_bulletins)} bulletins, "
             f"found {total_matches} new matches."
         )
+        return total_matches
 
     except Exception as e:
         db.rollback()
