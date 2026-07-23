@@ -101,59 +101,61 @@ def test_summary_returns_all_sections(frozen_client):
         "clientes_activos",
         "proximas_obligaciones",
         "mis_tareas_de_hoy",
-        "facturacion_neta",
-        "costes",
-        "facturacion_por_cliente",
-        "facturacion_por_proyecto",
+        "facturacion",
     }
     assert set(body["proyectos_activos"]) == {"active", "total"}
     assert set(body["clientes_activos"]) == {"active", "total"}
     assert set(body["tareas_pendientes"]) == {"pending", "total"}
     assert set(body["obligaciones_proximas"]) == {"count"}
-    assert set(body["facturacion_neta"]) == {"amount"}
-    assert set(body["costes"]) == {"amount"}
 
 
 @pytest.mark.integration
-def test_financial_section_aggregates_billing_and_costs(frozen_client):
-    """The financial section carries firm totals plus the top breakdown rows.
+def test_financial_section_groups_projects_under_customers(frozen_client):
+    """The financial section is a per-customer table with projects nested.
 
-    Totals come from the billing fixtures: net billing = invoices − credit memos
-    = 7000.00 firm-wide; usage cost from the job ledger = 3250.00. The tables are
-    capped at five rows and ordered by amount desc.
+    Customers are capped at five rows and ordered by net billing desc; each
+    carries its projects (billing, usage cost, hours) as children, with the
+    customer's cost/hours rolled up from those projects.
     """
     body = frozen_client.get(SUMMARY_URL).json()
 
-    assert body["facturacion_neta"] == {"amount": 7000.0}
-    assert body["costes"] == {"amount": 3250.0}
+    facturacion = body["facturacion"]
+    assert len(facturacion) <= 5
+    assert set(facturacion[0]) == {
+        "customer_id",
+        "customer_name",
+        "net_billed",
+        "cost",
+        "hours",
+        "projects",
+    }
+    net_amounts = [c["net_billed"] for c in facturacion]
+    assert net_amounts == sorted(net_amounts, reverse=True)
 
-    por_cliente = body["facturacion_por_cliente"]
-    assert len(por_cliente) <= 5
-    assert set(por_cliente[0]) == {"customer_id", "customer_name", "net_billed"}
     # cust-001 tops the list: 1500 + 2000 invoiced − 200 credited = 3300.
-    assert por_cliente[0]["customer_id"] == "cust-001"
-    assert por_cliente[0]["net_billed"] == 3300.0
-    amounts = [c["net_billed"] for c in por_cliente]
-    assert amounts == sorted(amounts, reverse=True)
+    top = facturacion[0]
+    assert top["customer_id"] == "cust-001"
+    assert top["net_billed"] == 3300.0
 
-    por_proyecto = body["facturacion_por_proyecto"]
-    assert len(por_proyecto) <= 5
-    assert set(por_proyecto[0]) == {
+    # Its projects are nested underneath, and cost/hours roll up from them.
+    assert set(top["projects"][0]) == {
         "project_id",
         "project_name",
         "billed",
         "cost",
         "hours",
     }
-    # proj-002: billed 2000, usage cost 900, 16 hours logged.
-    top = next(p for p in por_proyecto if p["project_id"] == "proj-002")
-    assert top == {
+    # proj-002 (Gestió laboral) belongs to cust-001: billed 2000, cost 900, 16 h.
+    proj_002 = next(p for p in top["projects"] if p["project_id"] == "proj-002")
+    assert proj_002 == {
         "project_id": "proj-002",
-        "project_name": top["project_name"],
+        "project_name": "Gestió laboral",
         "billed": 2000.0,
         "cost": 900.0,
         "hours": 16.0,
     }
+    assert top["cost"] == round(sum(p["cost"] for p in top["projects"]), 2)
+    assert top["hours"] == round(sum(p["hours"] for p in top["projects"]), 2)
 
 
 class _CountingBCClient:

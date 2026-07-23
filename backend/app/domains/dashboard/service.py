@@ -35,11 +35,11 @@ from .schemas import (
     ActiveTotalKpi,
     CountKpi,
     DashboardSummary,
-    MoneyKpi,
     PendingTotalKpi,
 )
 
-# How many rows of each financial breakdown the dashboard tables show.
+# How many customers the dashboard's unified billing table shows (each with all
+# its projects nested underneath).
 _FINANCIAL_TABLE_LIMIT = 5
 
 
@@ -126,30 +126,19 @@ class DashboardService:
             key=lambda t: t.due_date,
         )
 
-        # Financial section, aggregated live from Business Central. Totals are
-        # the sum across every row (invoices minus credit memos for billing,
-        # usage cost for costes); the tables show only the top rows.
-        #
-        # Both billing breakdowns read the same invoice/credit-memo lines, and
-        # the per-project one also needs the projects already fetched above for
-        # its KPI. Fetch each once and hand them to the service so a single
-        # dashboard load does not re-fetch the same BC endpoints.
+        # Financial section, aggregated live from Business Central into a single
+        # per-customer table with each customer's projects nested underneath
+        # (billing, usage cost, hours). The billing breakdowns read the same
+        # invoice/credit-memo lines and the projects already fetched above for
+        # the projects KPI, so fetch each once and hand them to the service — a
+        # single dashboard load does not re-fetch the same BC endpoints. Only the
+        # top customers by net billing are shown.
         invoice_lines = self.bc_client.get_sales_invoice_lines()
         cr_memo_lines = self.bc_client.get_sales_cr_memo_lines()
-        billing_por_cliente = self.billing.billing_by_customer(
-            invoice_lines=invoice_lines,
-            cr_memo_lines=cr_memo_lines,
-        )
-        billing_por_proyecto = self.billing.billing_by_project(
+        facturacion = self.billing.billing_by_customer_grouped(
             invoice_lines=invoice_lines,
             cr_memo_lines=cr_memo_lines,
             projects=projects,
-        )
-        facturacion_neta = MoneyKpi(
-            amount=round(sum(c.net_billed for c in billing_por_cliente), 2)
-        )
-        costes = MoneyKpi(
-            amount=round(sum(p.cost for p in billing_por_proyecto), 2)
         )
 
         return DashboardSummary(
@@ -159,8 +148,5 @@ class DashboardService:
             clientes_activos=clientes_activos,
             proximas_obligaciones=proximas_obligaciones,
             mis_tareas_de_hoy=mis_tareas_de_hoy,
-            facturacion_neta=facturacion_neta,
-            costes=costes,
-            facturacion_por_cliente=billing_por_cliente[:_FINANCIAL_TABLE_LIMIT],
-            facturacion_por_proyecto=billing_por_proyecto[:_FINANCIAL_TABLE_LIMIT],
+            facturacion=facturacion[:_FINANCIAL_TABLE_LIMIT],
         )

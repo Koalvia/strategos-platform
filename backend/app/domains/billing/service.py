@@ -25,7 +25,11 @@ from app.integrations.business_central.models import (
     BCSalesInvoiceLine,
 )
 
-from .schemas import CustomerBillingResponse, ProjectBillingResponse
+from .schemas import (
+    CustomerBillingGroupResponse,
+    CustomerBillingResponse,
+    ProjectBillingResponse,
+)
 
 # Monetary/quantity values are rounded to this many decimals in the responses.
 #
@@ -168,3 +172,92 @@ class BillingService:
         ]
         results.sort(key=lambda r: r.billed, reverse=True)
         return results
+
+    def billing_by_customer_grouped(
+        self,
+        *,
+        invoice_lines: list[BCSalesInvoiceLine] | None = None,
+        cr_memo_lines: list[BCSalesCrMemoLine] | None = None,
+        projects: list[BCProject] | None = None,
+    ) -> list[CustomerBillingGroupResponse]:
+        """Return each customer with its per-project billing nested underneath.
+
+        Folds :meth:`billing_by_customer` and :meth:`billing_by_project` into one
+        hierarchical result for the dashboard's unified accordion table: the
+        customer is the parent (authoritative net billing) and its projects the
+        children (billing, usage cost, hours). Each customer's ``cost``/``hours``
+        are the sum over its own projects. Customers are ordered by net billing
+        desc and, within each, projects keep the billing-desc order
+        :meth:`billing_by_project` already applies.
+
+        A customer appears if it has net billing **or** at least one project with
+        billing/cost/hours, so customers whose only activity is unbilled project
+        cost are not dropped. A project whose ``jobNo`` matches no known project
+        (so its customer is unknown) is grouped under ``"" / "Sin cliente"``
+        rather than silently discarded.
+
+        ``invoice_lines``/``cr_memo_lines``/``projects`` may be passed in when a
+        caller has already fetched them (the dashboard shares them across its KPI
+        and this table); when omitted they are fetched from Business Central.
+        """
+        if invoice_lines is None:
+            invoice_lines = self.bc_client.get_sales_invoice_lines()
+        if cr_memo_lines is None:
+            cr_memo_lines = self.bc_client.get_sales_cr_memo_lines()
+        if projects is None:
+            projects = self.bc_client.get_projects()
+
+        by_customer = self.billing_by_customer(
+            invoice_lines=invoice_lines, cr_memo_lines=cr_memo_lines
+        )
+        by_project = self.billing_by_project(
+            invoice_lines=invoice_lines,
+            cr_memo_lines=cr_memo_lines,
+            projects=projects,
+        )
+
+        net_by_customer = {c.customer_id: c.net_billed for c in by_customer}
+        project_customer = {p.id: p.customer_id for p in projects}
+
+        # Group the per-project rows under their owning customer. A project with
+        # no known owner lands under the "" key (surfaced as "Sin cliente").
+        projects_by_customer: dict[str, list[ProjectBillingResponse]] = {}
+        for project in by_project:
+            customer_id = project_customer.get(project.project_id, "")
+            projects_by_customer.setdefault(customer_id, []).append(project)
+
+        # A customer qualifies if it has net billing or at least one project.
+        customer_ids = set(net_by_customer) | set(projects_by_customer)
+
+        # Reuse the names billing_by_customer already resolved; only look up the
+        # ones that appear solely through a project (rare) to avoid re-fetching.
+        names = {c.customer_id: c.customer_name for c in by_customer}
+        missing = [cid for cid in customer_ids if cid and cid not in names]
+        if missing:
+            names.update(self.bc_client.get_customer_names(missing))
+
+        groups = [
+            CustomerBillingGroupResponse(
+                customer_id=customer_id,
+                customer_name=(
+                    names.get(customer_id, customer_id)
+                    if customer_id
+                    else "Sin cliente"
+                ),
+                net_billed=round(
+                    net_by_customer.get(customer_id, 0.0), _MONEY_DECIMALS
+                ),
+                cost=round(
+                    sum(p.cost for p in projects_by_customer.get(customer_id, [])),
+                    _MONEY_DECIMALS,
+                ),
+                hours=round(
+                    sum(p.hours for p in projects_by_customer.get(customer_id, [])),
+                    _MONEY_DECIMALS,
+                ),
+                projects=projects_by_customer.get(customer_id, []),
+            )
+            for customer_id in customer_ids
+        ]
+        groups.sort(key=lambda g: g.net_billed, reverse=True)
+        return groups

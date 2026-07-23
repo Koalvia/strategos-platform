@@ -37,3 +37,27 @@ class ProjectBillingResponse(BaseModel):
     billed: float
     cost: float
     hours: float
+
+
+class CustomerBillingGroupResponse(BaseModel):
+    """One customer with its per-project billing nested underneath.
+
+    A hierarchical view that folds the per-customer and per-project breakdowns
+    into a single accordion-friendly shape: the customer is the parent row and
+    ``projects`` are the child rows.
+
+    ``net_billed`` is the authoritative per-customer net billing (invoices minus
+    credit memos, attributed through the sales-document header — the same figure
+    :class:`CustomerBillingResponse` carries). ``cost`` and ``hours`` are rolled
+    up from ``projects`` (usage cost / logged hours), so they cover only work
+    tagged to one of the customer's projects. ``net_billed`` therefore need not
+    equal the sum of the children's ``billed`` — non-project invoice lines count
+    toward the customer total but sit under no project.
+    """
+
+    customer_id: str
+    customer_name: str
+    net_billed: float
+    cost: float
+    hours: float
+    projects: list[ProjectBillingResponse]

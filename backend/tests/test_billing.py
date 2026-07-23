@@ -89,11 +89,11 @@ class _BillingBCClient:
         return {cid: f"Customer {cid}" for cid in customer_ids}
 
 
-def _project(project_id: str, name: str) -> BCProject:
+def _project(project_id: str, name: str, customer_id: str = "cust-x") -> BCProject:
     return BCProject(
         id=project_id,
         name=name,
-        customer_id="cust-x",
+        customer_id=customer_id,
         responsible="",
         technician="",
         status=ProjectStatus.active,
@@ -185,6 +185,83 @@ def test_billing_by_project_falls_back_to_id_when_name_unknown():
     result = BillingService(None, bc).billing_by_project()
     assert result[0].project_id == "ghost"
     assert result[0].project_name == "ghost"
+
+
+@pytest.mark.unit
+def test_billing_by_customer_grouped_nests_projects_under_their_customer():
+    """Each customer group carries its projects with cost/hours rolled up."""
+    bc = _BillingBCClient(
+        invoice_headers=[
+            BCSalesInvoiceHeader(document_no="INV-1", customer_id="c1"),
+            BCSalesInvoiceHeader(document_no="INV-2", customer_id="c2"),
+        ],
+        invoice_lines=[
+            # c1: p1 project line 2000 + a non-project line 100 = 2100 net.
+            BCSalesInvoiceLine(document_no="INV-1", line_amount=2000.0, project_id="p1"),
+            BCSalesInvoiceLine(document_no="INV-1", line_amount=100.0, project_id=None),
+            # c2: p3 project line 500.
+            BCSalesInvoiceLine(document_no="INV-2", line_amount=500.0, project_id="p3"),
+        ],
+        job_ledger=[
+            BCJobLedgerEntry(entry_no="J1", project_id="p1", total_cost_lcy=400.0),
+            # p2 belongs to c1: cost only, no billing.
+            BCJobLedgerEntry(entry_no="J2", project_id="p2", total_cost_lcy=150.0),
+            BCJobLedgerEntry(entry_no="J3", project_id="p3", total_cost_lcy=200.0),
+        ],
+        time_sheets=[
+            BCTimeSheetPostingEntry(
+                time_sheet_no="T1", project_id="p1", resource_no="r1", quantity=8.0
+            ),
+        ],
+        projects=[
+            _project("p1", "Project One", "c1"),
+            _project("p2", "Project Two", "c1"),
+            _project("p3", "Project Three", "c2"),
+        ],
+    )
+
+    groups = {g.customer_id: g for g in BillingService(None, bc).billing_by_customer_grouped()}
+
+    # c1 net = 2100 (project + non-project lines); c2 net = 500.
+    assert groups["c1"].net_billed == 2100.0
+    assert groups["c2"].net_billed == 500.0
+    # c1's cost/hours roll up from p1 + p2 (550 cost, 8 hours); c2 from p3.
+    assert (groups["c1"].cost, groups["c1"].hours) == (550.0, 8.0)
+    assert (groups["c2"].cost, groups["c2"].hours) == (200.0, 0.0)
+    # Both of c1's projects are nested underneath it, billing desc.
+    assert {p.project_id for p in groups["c1"].projects} == {"p1", "p2"}
+    assert [p.project_id for p in groups["c1"].projects] == ["p1", "p2"]
+
+
+@pytest.mark.unit
+def test_billing_by_customer_grouped_orders_by_net_billing_desc():
+    """Customer groups are ordered by net billing, highest first."""
+    bc = _BillingBCClient(
+        invoice_headers=[
+            BCSalesInvoiceHeader(document_no="INV-1", customer_id="small"),
+            BCSalesInvoiceHeader(document_no="INV-2", customer_id="big"),
+        ],
+        invoice_lines=[
+            BCSalesInvoiceLine(document_no="INV-1", line_amount=100.0),
+            BCSalesInvoiceLine(document_no="INV-2", line_amount=900.0),
+        ],
+    )
+    groups = BillingService(None, bc).billing_by_customer_grouped()
+    assert [g.customer_id for g in groups] == ["big", "small"]
+
+
+@pytest.mark.unit
+def test_billing_by_customer_grouped_surfaces_project_without_known_customer():
+    """A project with no matching BC project lands under a 'Sin cliente' group."""
+    bc = _BillingBCClient(
+        job_ledger=[
+            BCJobLedgerEntry(entry_no="J1", project_id="ghost", total_cost_lcy=10.0)
+        ],
+        projects=[],
+    )
+    groups = {g.customer_id: g for g in BillingService(None, bc).billing_by_customer_grouped()}
+    assert groups[""].customer_name == "Sin cliente"
+    assert [p.project_id for p in groups[""].projects] == ["ghost"]
 
 
 @pytest.mark.unit
