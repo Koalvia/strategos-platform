@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_bopa_client
 from app.db.session import get_db
+from app.domains.alerts.tasks import generate_obligation_alerts
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
 from app.integrations.bopa.client import BopaClient
@@ -24,9 +25,11 @@ from .schemas import (
     DocumentDetail,
     DocumentFilterOptions,
     DocumentSearchPage,
+    ScanResult,
     SyncResult,
 )
 from .service import BopaService
+from .tasks import analyze_bopa_matches
 
 router = APIRouter(prefix="/bopa", tags=["bopa"])
 
@@ -138,3 +141,31 @@ def sync_bopa(
     """Manually run the BOPA sync synchronously and return what it persisted."""
     service = BopaService(db, bopa_client)
     return service.sync_latest()
+
+
+@router.post("/scan", response_model=ScanResult)
+def scan_bopa(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bopa_client: BopaClient = Depends(get_bopa_client),
+):
+    """Run the full BOPA scan on demand: sync, analyze matches, generate alerts.
+
+    This is what the "Iniciar Escaneo" button triggers. It mirrors the pipeline
+    that runs when a Celery worker starts (see ``app.celery_app``) and the
+    ``scripts/run_bopa_pipeline`` helper, but runs **synchronously** in the
+    request: there is no Celery result backend to poll, so running inline lets the
+    caller get the refreshed state back in one round-trip. Every step is
+    idempotent, so re-scanning only adds newly-published bulletins, newly-matched
+    documents and newly-due obligation alerts.
+    """
+    service = BopaService(db, bopa_client)
+    sync_result = service.sync_latest()
+    matches_created = analyze_bopa_matches()
+    generate_obligation_alerts()
+    return ScanResult(
+        bulletins_synced=sync_result.bulletins_synced,
+        documents_synced=sync_result.documents_synced,
+        documents_failed=sync_result.documents_failed,
+        matches_created=matches_created,
+    )

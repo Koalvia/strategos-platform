@@ -86,3 +86,13 @@ class SyncResult(BaseModel):
     bulletins_synced: int
     documents_synced: int
     documents_failed: int
+
+
+class ScanResult(SyncResult):
+    """Outcome of one on-demand full scan (``POST /bopa/scan``).
+
+    Extends the sync counts with the number of new BOPA matches produced by the
+    analysis step, so the caller can tell whether the scan surfaced anything new.
+    """
+
+    matches_created: int
