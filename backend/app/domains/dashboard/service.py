@@ -129,8 +129,22 @@ class DashboardService:
         # Financial section, aggregated live from Business Central. Totals are
         # the sum across every row (invoices minus credit memos for billing,
         # usage cost for costes); the tables show only the top rows.
-        billing_por_cliente = self.billing.billing_by_customer()
-        billing_por_proyecto = self.billing.billing_by_project()
+        #
+        # Both billing breakdowns read the same invoice/credit-memo lines, and
+        # the per-project one also needs the projects already fetched above for
+        # its KPI. Fetch each once and hand them to the service so a single
+        # dashboard load does not re-fetch the same BC endpoints.
+        invoice_lines = self.bc_client.get_sales_invoice_lines()
+        cr_memo_lines = self.bc_client.get_sales_cr_memo_lines()
+        billing_por_cliente = self.billing.billing_by_customer(
+            invoice_lines=invoice_lines,
+            cr_memo_lines=cr_memo_lines,
+        )
+        billing_por_proyecto = self.billing.billing_by_project(
+            invoice_lines=invoice_lines,
+            cr_memo_lines=cr_memo_lines,
+            projects=projects,
+        )
         facturacion_neta = MoneyKpi(
             amount=round(sum(c.net_billed for c in billing_por_cliente), 2)
         )

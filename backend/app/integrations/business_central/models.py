@@ -291,7 +291,7 @@ class BCJobLedgerEntry(BaseModel):
     """
 
     entry_no: str
-    project_id: str
+    project_id: str | None = None
     customer_id: str | None = None
     entry_type: str | None = None
     total_cost_lcy: float = 0.0
@@ -307,7 +307,7 @@ class BCTimeSheetPostingEntry(BaseModel):
     """
 
     time_sheet_no: str
-    project_id: str
+    project_id: str | None = None
     resource_no: str
     quantity: float = 0.0
     posting_date: date | None = None

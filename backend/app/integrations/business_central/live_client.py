@@ -620,7 +620,23 @@ class LiveBusinessCentralClient(BusinessCentralClient):
 
         Scoped server-side to ``entryType eq 'Usage'`` (the cost side of a
         project) so only cost rows come back.
+
+        BC Option values are case-sensitive and the ``'Usage'`` literal is not
+        yet verified against the live tenant. If the tenant spells it differently
+        (e.g. ``usage``/``USAGE``) the filter matches nothing, project costs
+        silently read as zero, and no error is raised — so an empty result is
+        logged as a warning to make that case noticeable in production.
         """
+        rows = self._get_all(
+            "jobLedgerEntries", filter_clause="entryType eq 'Usage'"
+        )
+        if not rows:
+            logger.warning(
+                "jobLedgerEntries returned no rows for filter "
+                "\"entryType eq 'Usage'\"; project costs will be zero. BC Option "
+                "values are case-sensitive — if the live tenant spells the value "
+                "differently, verify the filter literal."
+            )
         return [
             BCJobLedgerEntry(
                 entry_no=row["no"],
@@ -631,9 +647,7 @@ class LiveBusinessCentralClient(BusinessCentralClient):
                 line_type=row.get("type"),
                 posting_date=_parse_date(row.get("postingDate")),
             )
-            for row in self._get_all(
-                "jobLedgerEntries", filter_clause="entryType eq 'Usage'"
-            )
+            for row in rows
         ]
 
     def get_time_sheet_posting_entries(self) -> list[BCTimeSheetPostingEntry]:

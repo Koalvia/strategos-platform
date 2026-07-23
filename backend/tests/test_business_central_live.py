@@ -16,6 +16,7 @@ confirmed BC payloads (no real Strategos client data / PII). They cover:
 * that the still-deferred ``userTasks`` entity raises ``NotImplementedError``.
 """
 
+import logging
 from datetime import date
 
 import httpx
@@ -854,6 +855,38 @@ def test_job_ledger_entries_send_usage_filter_and_map_cost():
     assert entry.total_cost_lcy == 400.0
     assert entry.line_type == "Resource"
     assert entry.posting_date == date(2026, 1, 20)
+
+
+@pytest.mark.unit
+def test_job_ledger_entries_empty_result_logs_warning(caplog):
+    """An empty usage result is logged (case-sensitive filter may miss rows)."""
+    client, _ = _build_billing(jobLedgerEntries=[])
+
+    with caplog.at_level(logging.WARNING):
+        entries = client.get_job_ledger_entries()
+
+    assert entries == []
+    assert any(
+        "jobLedgerEntries returned no rows" in r.getMessage()
+        and r.levelno == logging.WARNING
+        for r in caplog.records
+    )
+
+
+@pytest.mark.unit
+def test_job_ledger_entries_with_rows_logs_no_warning(caplog):
+    """A non-empty usage result does not log the empty-result warning."""
+    client, _ = _build_billing(
+        jobLedgerEntries=[{"no": "JLE-1", "jobNo": "P1", "entryType": "Usage"}]
+    )
+
+    with caplog.at_level(logging.WARNING):
+        client.get_job_ledger_entries()
+
+    assert not any(
+        "jobLedgerEntries returned no rows" in r.getMessage()
+        for r in caplog.records
+    )
 
 
 @pytest.mark.unit

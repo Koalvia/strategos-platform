@@ -18,6 +18,7 @@ freeze it by overriding the ``get_reference_date`` dependency so assertions do n
 depend on the real clock.
 """
 
+from collections import Counter
 from datetime import date
 
 import pytest
@@ -27,9 +28,11 @@ from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
 from app.domains.dashboard.router import get_reference_date
+from app.domains.dashboard.service import DashboardService
 from app.domains.obligations.router import (
     get_reference_date as obligations_reference_date,
 )
+from app.integrations.business_central.mock_client import MockBusinessCentralClient
 from app.main import app
 
 SUMMARY_URL = "/api/v1/dashboard/summary"
@@ -153,6 +156,46 @@ def test_financial_section_aggregates_billing_and_costs(frozen_client):
     }
 
 
+class _CountingBCClient:
+    """Wraps a BC client, counting how many times each getter is called."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.calls: Counter[str] = Counter()
+
+    def __getattr__(self, name):
+        attr = getattr(self._inner, name)
+        if not callable(attr):
+            return attr
+
+        def wrapped(*args, **kwargs):
+            self.calls[name] += 1
+            return attr(*args, **kwargs)
+
+        return wrapped
+
+
+@pytest.mark.integration
+def test_dashboard_build_fetches_billing_lines_once(db_session):
+    """One dashboard load fetches the shared invoice/credit-memo lines once each.
+
+    Both billing breakdowns read the same lines; the dashboard fetches them once
+    and hands them to the service instead of letting each breakdown re-fetch.
+    """
+    bc = _CountingBCClient(MockBusinessCentralClient())
+    user = User(
+        name="Test User",
+        email="test@example.com",
+        hashed_password="not-a-real-hash",
+        is_verified=True,
+    )
+
+    DashboardService(db_session, bc).build_summary(user, FROZEN_TODAY)
+
+    assert bc.calls["get_sales_invoice_lines"] == 1
+    assert bc.calls["get_sales_cr_memo_lines"] == 1
+
+
 # --------------------------------------------------------------------------- #
 # KPI consistency with the underlying endpoints
 # --------------------------------------------------------------------------- #
@@ -167,7 +210,7 @@ def test_clientes_activos_matches_customers_endpoint(frozen_client):
     ).json()["items"]
     kpi = frozen_client.get(SUMMARY_URL).json()["clientes_activos"]
     assert kpi == {"active": len(active), "total": len(customers)}
-    assert kpi == {"active": 13, "total": 14}
+    assert kpi == {"active": 14, "total": 15}
 
 
 @pytest.mark.integration
@@ -179,16 +222,17 @@ def test_proyectos_activos_matches_projects_endpoint(frozen_client):
     ).json()["items"]
     kpi = frozen_client.get(SUMMARY_URL).json()["proyectos_activos"]
     assert kpi == {"active": len(active), "total": len(projects)}
-    assert kpi == {"active": 17, "total": 18}
+    assert kpi == {"active": 18, "total": 19}
 
 
 @pytest.mark.integration
 def test_generated_data_reflected_in_kpis(frozen_client):
     """The generated clients/projects show up in the KPI totals."""
     body = frozen_client.get(SUMMARY_URL).json()
-    # 8 original + 6 generated customers; 12 original + 6 generated projects.
-    assert body["clientes_activos"]["total"] == 14
-    assert body["proyectos_activos"]["total"] == 18
+    # 8 original + 6 generated + 1 OEC, SLU customer; 12 original + 6 generated
+    # + 1 OEC, SLU project.
+    assert body["clientes_activos"]["total"] == 15
+    assert body["proyectos_activos"]["total"] == 19
 
 
 @pytest.mark.integration
@@ -198,7 +242,7 @@ def test_tareas_pendientes_counts_unfinished_tasks(frozen_client):
     not_done = [t for t in tasks if t["status"] != "Hecho"]
     kpi = frozen_client.get(SUMMARY_URL).json()["tareas_pendientes"]
     assert kpi == {"pending": len(not_done), "total": len(tasks)}
-    assert kpi == {"pending": 13, "total": 15}
+    assert kpi == {"pending": 15, "total": 17}
 
 
 @pytest.mark.integration

@@ -85,7 +85,7 @@ export default function DashboardPage() {
           <Loader2 className="size-8 animate-spin text-[#caa53d]" />
         </div>
       ) : !summary ? (
-        <div className="mt-8 flex min-h-[240px] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white">
+        <div className="mt-8 flex min-h-60 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white">
           <p className="text-sm text-slate-500">
             No se ha podido cargar el resumen.
           </p>
@@ -131,11 +131,13 @@ export default function DashboardPage() {
               title="Facturación neta"
               value={formatEuro(summary.facturacionNeta.amount)}
               sublabel="facturas menos rectificativas"
+              variant="money"
             />
             <KpiTile
               title="Costes"
               value={formatEuro(summary.costes.amount)}
               sublabel="coste de uso de proyectos"
+              variant="money"
             />
           </div>
 

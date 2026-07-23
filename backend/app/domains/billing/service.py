@@ -19,6 +19,11 @@ per-project billing/cost/hours group on the line/entry ``project_id`` (BC
 from sqlalchemy.orm import Session
 
 from app.integrations.business_central.client import BusinessCentralClient
+from app.integrations.business_central.models import (
+    BCProject,
+    BCSalesCrMemoLine,
+    BCSalesInvoiceLine,
+)
 
 from .schemas import CustomerBillingResponse, ProjectBillingResponse
 
@@ -41,13 +46,28 @@ class BillingService:
         self.db = db
         self.bc_client = bc_client
 
-    def billing_by_customer(self) -> list[CustomerBillingResponse]:
+    def billing_by_customer(
+        self,
+        *,
+        invoice_lines: list[BCSalesInvoiceLine] | None = None,
+        cr_memo_lines: list[BCSalesCrMemoLine] | None = None,
+    ) -> list[CustomerBillingResponse]:
         """Return net billing per customer (invoices minus credit memos).
 
         Lines are attributed to a customer through their header
         (``document_no`` → ``customer_id``); a line whose header is missing is
         skipped since it cannot be attributed. Ordered by net billing desc.
+
+        ``invoice_lines``/``cr_memo_lines`` may be passed in when a caller has
+        already fetched them (the dashboard aggregates both breakdowns in one
+        request and reuses the lines across them); when omitted they are fetched
+        from Business Central.
         """
+        if invoice_lines is None:
+            invoice_lines = self.bc_client.get_sales_invoice_lines()
+        if cr_memo_lines is None:
+            cr_memo_lines = self.bc_client.get_sales_cr_memo_lines()
+
         invoice_customer = {
             h.document_no: h.customer_id
             for h in self.bc_client.get_sales_invoice_headers()
@@ -58,13 +78,13 @@ class BillingService:
         }
 
         net_by_customer: dict[str, float] = {}
-        for line in self.bc_client.get_sales_invoice_lines():
+        for line in invoice_lines:
             customer_id = invoice_customer.get(line.document_no)
             if customer_id:
                 net_by_customer[customer_id] = (
                     net_by_customer.get(customer_id, 0.0) + line.line_amount
                 )
-        for line in self.bc_client.get_sales_cr_memo_lines():
+        for line in cr_memo_lines:
             customer_id = cr_memo_customer.get(line.document_no)
             if customer_id:
                 net_by_customer[customer_id] = (
@@ -83,20 +103,38 @@ class BillingService:
         results.sort(key=lambda r: r.net_billed, reverse=True)
         return results
 
-    def billing_by_project(self) -> list[ProjectBillingResponse]:
+    def billing_by_project(
+        self,
+        *,
+        invoice_lines: list[BCSalesInvoiceLine] | None = None,
+        cr_memo_lines: list[BCSalesCrMemoLine] | None = None,
+        projects: list[BCProject] | None = None,
+    ) -> list[ProjectBillingResponse]:
         """Return net billing, usage cost and logged hours per project.
 
         Groups on the line/entry ``project_id`` (BC ``jobNo``); lines with no
         project are excluded from the per-project billing (they still count in
         ``billing_by_customer``). Ordered by billing desc.
+
+        ``invoice_lines``/``cr_memo_lines``/``projects`` may be passed in when a
+        caller has already fetched them (the dashboard reuses these across its
+        two billing breakdowns and its projects KPI); when omitted they are
+        fetched from Business Central.
         """
+        if invoice_lines is None:
+            invoice_lines = self.bc_client.get_sales_invoice_lines()
+        if cr_memo_lines is None:
+            cr_memo_lines = self.bc_client.get_sales_cr_memo_lines()
+        if projects is None:
+            projects = self.bc_client.get_projects()
+
         billed: dict[str, float] = {}
-        for line in self.bc_client.get_sales_invoice_lines():
+        for line in invoice_lines:
             if line.project_id:
                 billed[line.project_id] = (
                     billed.get(line.project_id, 0.0) + line.line_amount
                 )
-        for line in self.bc_client.get_sales_cr_memo_lines():
+        for line in cr_memo_lines:
             if line.project_id:
                 billed[line.project_id] = (
                     billed.get(line.project_id, 0.0) - line.line_amount
@@ -117,7 +155,7 @@ class BillingService:
                 )
 
         project_ids = set(billed) | set(cost) | set(hours)
-        names = {p.id: p.name for p in self.bc_client.get_projects()}
+        names = {p.id: p.name for p in projects}
         results = [
             ProjectBillingResponse(
                 project_id=project_id,
