@@ -210,7 +210,7 @@ def test_clientes_activos_matches_customers_endpoint(frozen_client):
     ).json()["items"]
     kpi = frozen_client.get(SUMMARY_URL).json()["clientes_activos"]
     assert kpi == {"active": len(active), "total": len(customers)}
-    assert kpi == {"active": 14, "total": 15}
+    assert kpi == {"active": 13, "total": 14}
 
 
 @pytest.mark.integration
@@ -222,17 +222,16 @@ def test_proyectos_activos_matches_projects_endpoint(frozen_client):
     ).json()["items"]
     kpi = frozen_client.get(SUMMARY_URL).json()["proyectos_activos"]
     assert kpi == {"active": len(active), "total": len(projects)}
-    assert kpi == {"active": 18, "total": 19}
+    assert kpi == {"active": 17, "total": 18}
 
 
 @pytest.mark.integration
 def test_generated_data_reflected_in_kpis(frozen_client):
     """The generated clients/projects show up in the KPI totals."""
     body = frozen_client.get(SUMMARY_URL).json()
-    # 8 original + 6 generated + 1 OEC, SLU customer; 12 original + 6 generated
-    # + 1 OEC, SLU project.
-    assert body["clientes_activos"]["total"] == 15
-    assert body["proyectos_activos"]["total"] == 19
+    # 8 original + 6 generated customers; 12 original + 6 generated projects.
+    assert body["clientes_activos"]["total"] == 14
+    assert body["proyectos_activos"]["total"] == 18
 
 
 @pytest.mark.integration
@@ -242,7 +241,7 @@ def test_tareas_pendientes_counts_unfinished_tasks(frozen_client):
     not_done = [t for t in tasks if t["status"] != "Hecho"]
     kpi = frozen_client.get(SUMMARY_URL).json()["tareas_pendientes"]
     assert kpi == {"pending": len(not_done), "total": len(tasks)}
-    assert kpi == {"pending": 15, "total": 17}
+    assert kpi == {"pending": 13, "total": 15}
 
 
 @pytest.mark.integration
