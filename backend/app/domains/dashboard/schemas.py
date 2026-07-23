@@ -15,7 +15,6 @@ from pydantic import BaseModel
 
 from app.domains.billing.schemas import CustomerBillingGroupResponse
 from app.domains.obligations.schemas import ProjectObligationResponse
-from app.domains.tasks.schemas import TaskResponse
 
 
 class ActiveTotalKpi(BaseModel):
@@ -39,12 +38,11 @@ class CountKpi(BaseModel):
 
 
 class DashboardSummary(BaseModel):
-    """The composed landing-screen summary for the current user.
+    """The composed landing-screen summary.
 
-    The four count KPI tiles are firm-wide; ``mis_tareas_de_hoy`` is scoped to
-    the current user (see ``service.DashboardService``). ``proximas_obligaciones``
-    carries the upcoming/overdue obligation instances across all projects,
-    ordered by due date.
+    The four count KPI tiles are firm-wide. ``proximas_obligaciones`` carries the
+    upcoming/overdue obligation instances across all projects, ordered by due
+    date.
 
     The financial section is aggregated live from Business Central (see the
     billing domain): ``facturacion`` carries the top customers by net billing,
@@ -57,5 +55,4 @@ class DashboardSummary(BaseModel):
     tareas_pendientes: PendingTotalKpi
     clientes_activos: ActiveTotalKpi
     proximas_obligaciones: list[ProjectObligationResponse]
-    mis_tareas_de_hoy: list[TaskResponse]
     facturacion: list[CustomerBillingGroupResponse]

@@ -5,12 +5,12 @@ the customers / projects / obligations / tasks domains, all served from the
 fixture-backed ``MockBusinessCentralClient`` (the default DI mode). These tests
 cover:
 
-* the summary shape (four KPI tiles + the two list sections),
+* the summary shape (four KPI tiles + the "Próximas obligaciones" list + the
+  per-customer "Facturación" breakdown),
 * that each KPI is internally consistent with the underlying domain endpoint's
   count for the mock data (asserted against a frozen reference date for the
   obligation-derived numbers),
-* the "Próximas obligaciones" list (upcoming + overdue, ordered by due date),
-* "Mis tareas de hoy" scoped to the current user's unfinished, soon-due tasks, and
+* the "Próximas obligaciones" list (upcoming + overdue, ordered by due date), and
 * that the endpoint rejects unauthenticated requests.
 
 The obligation-derived numbers are computed against a reference "today"; tests
@@ -25,8 +25,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db.session import get_db
-from app.domains.auth.models import User
-from app.domains.auth.utils import get_verified_user
 from app.domains.dashboard.router import get_reference_date
 from app.domains.dashboard.service import DashboardService
 from app.domains.obligations.router import (
@@ -55,34 +53,6 @@ def frozen_client(client):
     app.dependency_overrides.pop(get_reference_date, None)
 
 
-@pytest.fixture
-def frozen_bc_user_client(db_session):
-    """A frozen-date client whose user maps to BC assignee ``usr-anna``.
-
-    "Mis tareas de hoy" resolves the BC assignee by email, so the seeded user's
-    email must match a BC user (``anna@estrategos.ad``).
-    """
-    user = User(
-        name="Anna Ferrer",
-        email="anna@estrategos.ad",
-        hashed_password="not-a-real-hash",
-        is_verified=True,
-    )
-    db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
-
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_verified_user] = lambda: user
-    app.dependency_overrides[get_reference_date] = lambda: FROZEN_TODAY
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-
-
 # --------------------------------------------------------------------------- #
 # Shape
 # --------------------------------------------------------------------------- #
@@ -100,7 +70,6 @@ def test_summary_returns_all_sections(frozen_client):
         "tareas_pendientes",
         "clientes_activos",
         "proximas_obligaciones",
-        "mis_tareas_de_hoy",
         "facturacion",
     }
     assert set(body["proyectos_activos"]) == {"active", "total"}
@@ -185,14 +154,8 @@ def test_dashboard_build_fetches_billing_lines_once(db_session):
     and hands them to the service instead of letting each breakdown re-fetch.
     """
     bc = _CountingBCClient(MockBusinessCentralClient())
-    user = User(
-        name="Test User",
-        email="test@example.com",
-        hashed_password="not-a-real-hash",
-        is_verified=True,
-    )
 
-    DashboardService(db_session, bc).build_summary(user, FROZEN_TODAY)
+    DashboardService(db_session, bc).build_summary(FROZEN_TODAY)
 
     assert bc.calls["get_sales_invoice_lines"] == 1
     assert bc.calls["get_sales_cr_memo_lines"] == 1
@@ -299,33 +262,6 @@ def test_proximas_obligaciones_are_upcoming_or_overdue_ordered(frozen_client):
         "submission_date",
         "status",
     }
-
-
-# --------------------------------------------------------------------------- #
-# Mis tareas de hoy
-# --------------------------------------------------------------------------- #
-
-
-@pytest.mark.integration
-def test_mis_tareas_scoped_to_current_user(frozen_bc_user_client):
-    """"Mis tareas de hoy" returns the user's unfinished, soon-due tasks, ordered."""
-    body = frozen_bc_user_client.get(SUMMARY_URL).json()
-    mis = body["mis_tareas_de_hoy"]
-    # Only usr-anna's tasks, none of them Hecho, all due on/before the window end.
-    assert {t["assignee"]["id"] for t in mis} == {"usr-anna"}
-    assert "Hecho" not in {t["status"] for t in mis}
-    # task-015 (Hecho) drops out; task-003/006/011 are due within the window.
-    assert [t["id"] for t in mis] == ["task-006", "task-011", "task-003"]
-    due_dates = [t["due_date"] for t in mis]
-    assert due_dates == sorted(due_dates)
-
-
-@pytest.mark.integration
-def test_mis_tareas_empty_when_no_bc_user_matches(frozen_client):
-    """A local user with no matching BC email has no "mis tareas de hoy"."""
-    # The default ``test_user`` email (test@example.com) is not a BC user.
-    body = frozen_client.get(SUMMARY_URL).json()
-    assert body["mis_tareas_de_hoy"] == []
 
 
 # --------------------------------------------------------------------------- #
