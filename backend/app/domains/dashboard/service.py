@@ -12,11 +12,10 @@ obligations domain uses). The router injects the server date; tests freeze it so
 the aggregation can be asserted deterministically.
 """
 
-from datetime import date, timedelta
+from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.domains.auth.models import User
 from app.domains.billing.service import BillingService
 from app.domains.obligations.schemas import DerivedObligationStatus
 from app.domains.obligations.service import (
@@ -54,18 +53,16 @@ class DashboardService:
 
     def build_summary(
         self,
-        user: User,
         reference_date: date,
         upcoming_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
     ) -> DashboardSummary:
-        """Build the dashboard summary for ``user`` against ``reference_date``.
+        """Build the dashboard summary against ``reference_date``.
 
-        KPI tiles are firm-wide; ``mis_tareas_de_hoy`` is scoped to ``user``'s BC
-        tasks. ``proximas_obligaciones`` is the upcoming + overdue obligation
-        instances across all projects (everything not "Al día"), and
-        ``obligaciones_proximas`` counts just the ones due within the next
-        ``upcoming_within_days`` days. Undated instances (``Sin fecha`` — no BC
-        due date yet) sit on neither list and are counted nowhere.
+        KPI tiles are firm-wide. ``proximas_obligaciones`` is the upcoming +
+        overdue obligation instances across all projects (everything not "Al
+        día"), and ``obligaciones_proximas`` counts just the ones due within the
+        next ``upcoming_within_days`` days. Undated instances (``Sin fecha`` — no
+        BC due date yet) sit on neither list and are counted nowhere.
         """
         # The KPI needs every customer to count firm-wide, so it reads the full
         # BC list directly rather than through the paginated directory listing
@@ -114,18 +111,6 @@ class DashboardService:
             )
         )
 
-        # "Mis tareas de hoy": the current user's unfinished tasks due within the
-        # same upcoming window (overdue ones included), ordered by due date.
-        cutoff = reference_date + timedelta(days=upcoming_within_days)
-        mis_tareas_de_hoy = sorted(
-            (
-                t
-                for t in self.tasks.list_my_tasks(user)
-                if t.status is not TaskStatus.done and t.due_date <= cutoff
-            ),
-            key=lambda t: t.due_date,
-        )
-
         # Financial section, aggregated live from Business Central into a single
         # per-customer table with each customer's projects nested underneath
         # (billing, usage cost, hours). The billing breakdowns read the same
@@ -147,6 +132,5 @@ class DashboardService:
             tareas_pendientes=tareas_pendientes,
             clientes_activos=clientes_activos,
             proximas_obligaciones=proximas_obligaciones,
-            mis_tareas_de_hoy=mis_tareas_de_hoy,
             facturacion=facturacion[:_FINANCIAL_TABLE_LIMIT],
         )

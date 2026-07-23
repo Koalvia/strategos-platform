@@ -40,13 +40,14 @@ def get_summary(
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
     reference_date: date = Depends(get_reference_date),
 ):
-    """Return the composed dashboard summary for the current user.
+    """Return the composed dashboard summary.
 
     Four firm-wide KPI tiles (proyectos activos, obligaciones próximas, tareas
     pendientes, clientes activos), the "Próximas obligaciones" list
     (upcoming/overdue instances across all projects, ordered by due date) and the
-    current user's "Mis tareas de hoy" list. Every number delegates to the
-    underlying customers/projects/obligations/tasks services.
+    per-customer "Facturación" breakdown. Every number delegates to the
+    underlying customers/projects/obligations/billing services. A verified user
+    is still required (the summary itself is firm-wide, not user-scoped).
     """
     service = DashboardService(db, bc_client)
-    return service.build_summary(current_user, reference_date)
+    return service.build_summary(reference_date)

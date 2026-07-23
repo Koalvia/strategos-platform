@@ -245,7 +245,6 @@ export interface DashboardSummaryResponse {
   tareas_pendientes: PendingTotalKpi
   clientes_activos: ActiveTotalKpi
   proximas_obligaciones: ProjectObligationResponse[]
-  mis_tareas_de_hoy: TaskResponse[]
   facturacion: CustomerBillingGroup[]
 }
 
@@ -256,7 +255,6 @@ export interface DashboardSummary {
   tareasPendientes: PendingTotalKpi
   clientesActivos: ActiveTotalKpi
   proximasObligaciones: ProjectObligation[]
-  misTareasDeHoy: Task[]
   facturacion: CustomerBillingGroup[]
 }
 
@@ -370,7 +368,6 @@ export function transformDashboardSummaryResponse(
     proximasObligaciones: backendSummary.proximas_obligaciones.map(
       transformProjectObligationResponse,
     ),
-    misTareasDeHoy: backendSummary.mis_tareas_de_hoy.map(transformTaskResponse),
     facturacion: backendSummary.facturacion,
   }
 }

@@ -7,7 +7,6 @@ import { authApi } from "@/features/auth/api"
 import { dashboardApi } from "@/features/dashboard/api"
 import { FacturacionResumen } from "@/features/dashboard/facturacion-resumen"
 import { KpiTile } from "@/features/dashboard/kpi-tile"
-import { MisTareas } from "@/features/dashboard/mis-tareas"
 import { ProximasObligaciones } from "@/features/dashboard/proximas-obligaciones"
 import type { DashboardSummary } from "@/lib/types"
 
@@ -121,13 +120,8 @@ export default function DashboardPage() {
             <FacturacionResumen groups={summary.facturacion} />
           </div>
 
-          <div className="mt-6 grid gap-5 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <ProximasObligaciones obligations={summary.proximasObligaciones} />
-            </div>
-            <div>
-              <MisTareas tasks={summary.misTareasDeHoy} />
-            </div>
+          <div className="mt-6">
+            <ProximasObligaciones obligations={summary.proximasObligaciones} />
           </div>
         </>
       )}
