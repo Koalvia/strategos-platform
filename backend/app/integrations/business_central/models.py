@@ -216,3 +216,111 @@ class BCProjectObligation(BaseModel):
     submission_date: date | None = None
     fecha_notificacion: date | None = None
     status: ObligationStatus | None = None
+
+
+# -- Billing / Costs -----------------------------------------------------------
+#
+# Read-only transport DTOs for BC's sales and job-ledger entities, the source of
+# truth for the firm's billing and costs. A sales document is a header plus its
+# lines: a line links back to its header on ``document_no`` (BC ``documentNo`` ==
+# header ``no``). Amounts are BC's own ``lineAmount``/``totalCostLCY`` in local
+# currency (EUR) and are kept as plain floats — there is no ``Decimal`` in this
+# codebase and BC serializes them as JSON numbers. ``line_type``/``number``/
+# ``entry_type`` are free-form BC Option strings (like ``customer_type`` above),
+# not enums.
+
+
+class BCSalesInvoiceHeader(BaseModel):
+    """A sales-invoice header (BC ``GET /salesInvoiceHeaders``).
+
+    ``document_no`` (BC ``no``) is the invoice number a line references via its
+    own ``documentNo``. ``customer_id`` is BC ``sellToCustomerNumber``.
+    """
+
+    document_no: str
+    customer_id: str
+    posting_date: date | None = None
+
+
+class BCSalesInvoiceLine(BaseModel):
+    """A sales-invoice line (BC ``GET /salesInvoiceLines``).
+
+    ``document_no`` (BC ``documentNo``) ties the line to its
+    :class:`BCSalesInvoiceHeader`. ``project_id`` is BC ``jobNo`` (blank for
+    non-project lines). ``line_type``/``number`` are BC ``type``/``number``.
+    """
+
+    document_no: str
+    line_amount: float = 0.0
+    project_id: str | None = None
+    line_type: str | None = None
+    number: str | None = None
+
+
+class BCSalesCrMemoHeader(BaseModel):
+    """A sales credit-memo header (BC ``GET /salesCrMemoHeaders``).
+
+    Same shape as :class:`BCSalesInvoiceHeader`; credit-memo amounts are
+    subtracted from invoiced amounts to get net billing.
+    """
+
+    document_no: str
+    customer_id: str
+    posting_date: date | None = None
+
+
+class BCSalesCrMemoLine(BaseModel):
+    """A sales credit-memo line (BC ``GET /salesCrMemoLines``).
+
+    ``document_no`` (BC ``documentNo``) ties the line to its
+    :class:`BCSalesCrMemoHeader`; ``project_id`` is BC ``jobNo``.
+    """
+
+    document_no: str
+    line_amount: float = 0.0
+    project_id: str | None = None
+
+
+class BCJobLedgerEntry(BaseModel):
+    """A job-ledger entry (BC ``GET /jobLedgerEntries``).
+
+    The live client fetches only ``entryType eq 'Usage'`` rows (the cost side of
+    a project). ``entry_no`` is BC ``no``, ``project_id`` is ``jobNo``,
+    ``customer_id`` is ``customerNo``, ``total_cost_lcy`` is the entry's cost in
+    local currency, and ``line_type`` is BC ``type``.
+    """
+
+    entry_no: str
+    project_id: str | None = None
+    customer_id: str | None = None
+    entry_type: str | None = None
+    total_cost_lcy: float = 0.0
+    line_type: str | None = None
+    posting_date: date | None = None
+
+
+class BCTimeSheetPostingEntry(BaseModel):
+    """A time-sheet posting entry (BC ``GET /timeSheetPostingEntries``).
+
+    Read-through only for now (hours are not yet aggregated). ``project_id`` is
+    BC ``jobNo``, ``resource_no`` is the resource that logged ``quantity`` hours.
+    """
+
+    time_sheet_no: str
+    project_id: str | None = None
+    resource_no: str
+    quantity: float = 0.0
+    posting_date: date | None = None
+
+
+class BCResource(BaseModel):
+    """A billable resource (BC ``GET /resources``).
+
+    Read-through only for now (used by a future margin/hours feature).
+    ``id`` is BC ``no``.
+    """
+
+    id: str
+    name: str
+    unit_cost: float = 0.0
+    unit_price: float = 0.0

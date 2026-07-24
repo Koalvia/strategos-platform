@@ -1,0 +1,5 @@
+[
+  { "time_sheet_no": "TS-001", "project_id": "proj-001", "resource_no": "RES-01", "quantity": 8.0, "posting_date": "2026-01-20" },
+  { "time_sheet_no": "TS-002", "project_id": "proj-002", "resource_no": "RES-01", "quantity": 16.0, "posting_date": "2026-02-18" },
+  { "time_sheet_no": "TS-003", "project_id": "proj-003", "resource_no": "RES-02", "quantity": 12.0, "posting_date": "2026-03-12" }
+]

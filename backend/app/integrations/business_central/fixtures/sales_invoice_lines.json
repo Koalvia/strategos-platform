@@ -1,0 +1,9 @@
+[
+  { "document_no": "INV-001", "line_amount": 1000.0, "project_id": "proj-001", "line_type": "Resource", "number": "RES-01" },
+  { "document_no": "INV-001", "line_amount": 500.0, "project_id": "proj-001", "line_type": "Item", "number": "ITM-01" },
+  { "document_no": "INV-002", "line_amount": 2000.0, "project_id": "proj-002", "line_type": "Resource", "number": "RES-01" },
+  { "document_no": "INV-003", "line_amount": 1500.0, "project_id": "proj-003", "line_type": "Resource", "number": "RES-02" },
+  { "document_no": "INV-003", "line_amount": 300.0, "project_id": null, "line_type": "G/L Account", "number": "GL-700" },
+  { "document_no": "INV-004", "line_amount": 800.0, "project_id": "proj-004", "line_type": "Resource", "number": "RES-01" },
+  { "document_no": "INV-005", "line_amount": 1200.0, "project_id": "proj-006", "line_type": "Resource", "number": "RES-03" }
+]

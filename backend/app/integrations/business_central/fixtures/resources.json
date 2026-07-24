@@ -1,0 +1,5 @@
+[
+  { "id": "RES-01", "name": "Marc Solé", "unit_cost": 25.0, "unit_price": 60.0 },
+  { "id": "RES-02", "name": "Jordi Vila", "unit_cost": 20.0, "unit_price": 50.0 },
+  { "id": "RES-03", "name": "Laura Puig", "unit_cost": 22.0, "unit_price": 55.0 }
+]

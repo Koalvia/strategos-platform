@@ -358,6 +358,27 @@ class _LiveShapedBCClient(BusinessCentralClient):
     def get_project_obligations(self):
         return []
 
+    def get_sales_invoice_headers(self):
+        return []
+
+    def get_sales_invoice_lines(self):
+        return []
+
+    def get_sales_cr_memo_headers(self):
+        return []
+
+    def get_sales_cr_memo_lines(self):
+        return []
+
+    def get_job_ledger_entries(self):
+        return []
+
+    def get_time_sheet_posting_entries(self):
+        return []
+
+    def get_resources(self):
+        return []
+
 
 @pytest.mark.unit
 def test_live_shaped_project_serializes_with_none_type_fields():

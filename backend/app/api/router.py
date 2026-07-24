@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.health import router as health_router
 from app.domains.alerts.router import router as alerts_router
 from app.domains.auth.router import router as auth_router
+from app.domains.billing.router import router as billing_router
 from app.domains.bopa.router import router as bopa_router
 from app.domains.customers.router import router as customers_router
 from app.domains.dashboard.router import router as dashboard_router
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/api/v1")
 router.include_router(health_router)
 router.include_router(alerts_router)
 router.include_router(auth_router)
+router.include_router(billing_router)
 router.include_router(bopa_router)
 router.include_router(customers_router)
 router.include_router(dashboard_router)

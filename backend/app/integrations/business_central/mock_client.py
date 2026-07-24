@@ -23,10 +23,17 @@ from app.integrations.business_central.client import (
 from app.integrations.business_central.models import (
     BCCustomer,
     BCCustomerPage,
+    BCJobLedgerEntry,
     BCObligation,
     BCProject,
     BCProjectObligation,
     BCProjectPage,
+    BCResource,
+    BCSalesCrMemoHeader,
+    BCSalesCrMemoLine,
+    BCSalesInvoiceHeader,
+    BCSalesInvoiceLine,
+    BCTimeSheetPostingEntry,
     BCUser,
     BCUserTask,
     CustomerStatus,
@@ -50,6 +57,17 @@ _USERS = _load("users.json", BCUser)
 _USER_TASKS = _load("user_tasks.json", BCUserTask)
 _OBLIGATIONS = _load("obligations.json", BCObligation)
 _PROJECT_OBLIGATIONS = _load("project_obligations.json", BCProjectObligation)
+_SALES_INVOICE_HEADERS = _load("sales_invoice_headers.json", BCSalesInvoiceHeader)
+_SALES_INVOICE_LINES = _load("sales_invoice_lines.json", BCSalesInvoiceLine)
+_SALES_CR_MEMO_HEADERS = _load("sales_cr_memo_headers.json", BCSalesCrMemoHeader)
+_SALES_CR_MEMO_LINES = _load("sales_cr_memo_lines.json", BCSalesCrMemoLine)
+# Fixture is pre-filtered to ``entryType == 'Usage'`` rows, mirroring the
+# server-side ``$filter`` the live client applies (see get_job_ledger_entries).
+_JOB_LEDGER_ENTRIES = _load("job_ledger_entries.json", BCJobLedgerEntry)
+_TIME_SHEET_POSTING_ENTRIES = _load(
+    "time_sheet_posting_entries.json", BCTimeSheetPostingEntry
+)
+_RESOURCES = _load("resources.json", BCResource)
 
 
 class MockBusinessCentralClient(BusinessCentralClient):
@@ -144,3 +162,26 @@ class MockBusinessCentralClient(BusinessCentralClient):
 
     def get_project_obligations(self) -> list[BCProjectObligation]:
         return list(_PROJECT_OBLIGATIONS)
+
+    # -- Billing / Costs -------------------------------------------------------
+
+    def get_sales_invoice_headers(self) -> list[BCSalesInvoiceHeader]:
+        return list(_SALES_INVOICE_HEADERS)
+
+    def get_sales_invoice_lines(self) -> list[BCSalesInvoiceLine]:
+        return list(_SALES_INVOICE_LINES)
+
+    def get_sales_cr_memo_headers(self) -> list[BCSalesCrMemoHeader]:
+        return list(_SALES_CR_MEMO_HEADERS)
+
+    def get_sales_cr_memo_lines(self) -> list[BCSalesCrMemoLine]:
+        return list(_SALES_CR_MEMO_LINES)
+
+    def get_job_ledger_entries(self) -> list[BCJobLedgerEntry]:
+        return list(_JOB_LEDGER_ENTRIES)
+
+    def get_time_sheet_posting_entries(self) -> list[BCTimeSheetPostingEntry]:
+        return list(_TIME_SHEET_POSTING_ENTRIES)
+
+    def get_resources(self) -> list[BCResource]:
+        return list(_RESOURCES)

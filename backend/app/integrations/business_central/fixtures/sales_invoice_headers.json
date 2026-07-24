@@ -1,0 +1,7 @@
+[
+  { "document_no": "INV-001", "customer_id": "cust-001", "posting_date": "2026-01-15" },
+  { "document_no": "INV-002", "customer_id": "cust-001", "posting_date": "2026-02-15" },
+  { "document_no": "INV-003", "customer_id": "cust-002", "posting_date": "2026-03-10" },
+  { "document_no": "INV-004", "customer_id": "cust-003", "posting_date": "2026-04-05" },
+  { "document_no": "INV-005", "customer_id": "cust-005", "posting_date": "2026-05-20" }
+]

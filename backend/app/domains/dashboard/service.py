@@ -17,6 +17,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.domains.auth.models import User
+from app.domains.billing.service import BillingService
 from app.domains.obligations.schemas import DerivedObligationStatus
 from app.domains.obligations.service import (
     DEFAULT_UPCOMING_WINDOW_DAYS,
@@ -37,6 +38,10 @@ from .schemas import (
     PendingTotalKpi,
 )
 
+# How many customers the dashboard's unified billing table shows (each with all
+# its projects nested underneath).
+_FINANCIAL_TABLE_LIMIT = 5
+
 
 class DashboardService:
     """Compose the landing-screen summary from the other domains' services."""
@@ -45,6 +50,7 @@ class DashboardService:
         self.bc_client = bc_client
         self.obligations = ObligationsService(db, bc_client)
         self.tasks = TasksService(db, bc_client)
+        self.billing = BillingService(db, bc_client)
 
     def build_summary(
         self,
@@ -120,6 +126,21 @@ class DashboardService:
             key=lambda t: t.due_date,
         )
 
+        # Financial section, aggregated live from Business Central into a single
+        # per-customer table with each customer's projects nested underneath
+        # (billing, usage cost, hours). The billing breakdowns read the same
+        # invoice/credit-memo lines and the projects already fetched above for
+        # the projects KPI, so fetch each once and hand them to the service — a
+        # single dashboard load does not re-fetch the same BC endpoints. Only the
+        # top customers by net billing are shown.
+        invoice_lines = self.bc_client.get_sales_invoice_lines()
+        cr_memo_lines = self.bc_client.get_sales_cr_memo_lines()
+        facturacion = self.billing.billing_by_customer_grouped(
+            invoice_lines=invoice_lines,
+            cr_memo_lines=cr_memo_lines,
+            projects=projects,
+        )
+
         return DashboardSummary(
             proyectos_activos=proyectos_activos,
             obligaciones_proximas=obligaciones_proximas,
@@ -127,4 +148,5 @@ class DashboardService:
             clientes_activos=clientes_activos,
             proximas_obligaciones=proximas_obligaciones,
             mis_tareas_de_hoy=mis_tareas_de_hoy,
+            facturacion=facturacion[:_FINANCIAL_TABLE_LIMIT],
         )

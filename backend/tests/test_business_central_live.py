@@ -16,6 +16,7 @@ confirmed BC payloads (no real Strategos client data / PII). They cover:
 * that the still-deferred ``userTasks`` entity raises ``NotImplementedError``.
 """
 
+import logging
 from datetime import date
 
 import httpx
@@ -732,4 +733,190 @@ def test_base_url_matches_documented_pattern():
     assert client._base_url == (
         "https://api.businesscentral.dynamics.com/v2.0/test-tenant/RESTSTR/api/"
         "strategos/integrations/v1.0/companies(test-company)"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Billing / Costs
+# --------------------------------------------------------------------------- #
+
+
+def _build_billing(**rows_by_entity):
+    """Build a live client + request recorder returning rows per billing entity.
+
+    Keys are BC entity names (``salesInvoiceHeaders`` etc.); each value is the
+    row list that entity's read should return.
+    """
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.host == _TOKEN_HOST:
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "token-1",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                },
+            )
+
+        assert request.headers.get("Authorization", "").startswith("Bearer ")
+        entity = request.url.path.rsplit("/", 1)[-1]
+        if entity in rows_by_entity:
+            return httpx.Response(200, json=_page(rows_by_entity[entity]))
+        return httpx.Response(404, json={"error": f"unexpected path {request.url.path}"})
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = LiveBusinessCentralClient(
+        **_CONFIG, http_client=http_client, clock=lambda: 0.0
+    )
+    return client, requests
+
+
+@pytest.mark.unit
+def test_sales_invoice_header_and_line_mapping():
+    """Headers map no/customer/postingDate; lines map amount/jobNo/type/number."""
+    client, _ = _build_billing(
+        salesInvoiceHeaders=[
+            {"no": "INV-1", "sellToCustomerNumber": "C1", "postingDate": "2026-01-15"}
+        ],
+        salesInvoiceLines=[
+            {
+                "documentNo": "INV-1",
+                "lineAmount": 1000.5,
+                "jobNo": "P1",
+                "type": "Resource",
+                "number": "RES-01",
+            },
+            # Non-project line: blank jobNo collapses to project_id None.
+            {"documentNo": "INV-1", "lineAmount": 300, "jobNo": "", "type": "G/L Account"},
+        ],
+    )
+
+    header = client.get_sales_invoice_headers()[0]
+    assert header.document_no == "INV-1"
+    assert header.customer_id == "C1"
+    assert header.posting_date == date(2026, 1, 15)
+
+    lines = client.get_sales_invoice_lines()
+    assert lines[0].document_no == "INV-1"
+    assert lines[0].line_amount == 1000.5
+    assert lines[0].project_id == "P1"
+    assert lines[0].line_type == "Resource"
+    assert lines[0].number == "RES-01"
+    assert lines[1].project_id is None
+
+
+@pytest.mark.unit
+def test_sales_cr_memo_mapping():
+    """Credit-memo headers and lines map like invoices (amount subtracts later)."""
+    client, _ = _build_billing(
+        salesCrMemoHeaders=[
+            {"no": "CM-1", "sellToCustomerNumber": "C1", "postingDate": "2026-02-20"}
+        ],
+        salesCrMemoLines=[{"documentNo": "CM-1", "lineAmount": 200.0, "jobNo": "P1"}],
+    )
+
+    header = client.get_sales_cr_memo_headers()[0]
+    assert (header.document_no, header.customer_id) == ("CM-1", "C1")
+    line = client.get_sales_cr_memo_lines()[0]
+    assert (line.document_no, line.line_amount, line.project_id) == ("CM-1", 200.0, "P1")
+
+
+@pytest.mark.unit
+def test_job_ledger_entries_send_usage_filter_and_map_cost():
+    """The job-ledger read is scoped server-side to ``entryType eq 'Usage'``."""
+    client, requests = _build_billing(
+        jobLedgerEntries=[
+            {
+                "no": "JLE-1",
+                "jobNo": "P1",
+                "customerNo": "C1",
+                "entryType": "Usage",
+                "totalCostLCY": 400.0,
+                "type": "Resource",
+                "postingDate": "2026-01-20",
+            }
+        ]
+    )
+
+    entries = client.get_job_ledger_entries()
+
+    ledger_request = next(
+        r for r in requests if r.url.path.endswith("/jobLedgerEntries")
+    )
+    assert ledger_request.url.params["$filter"] == "entryType eq 'Usage'"
+
+    entry = entries[0]
+    assert entry.entry_no == "JLE-1"
+    assert entry.project_id == "P1"
+    assert entry.customer_id == "C1"
+    assert entry.total_cost_lcy == 400.0
+    assert entry.line_type == "Resource"
+    assert entry.posting_date == date(2026, 1, 20)
+
+
+@pytest.mark.unit
+def test_job_ledger_entries_empty_result_logs_warning(caplog):
+    """An empty usage result is logged (case-sensitive filter may miss rows)."""
+    client, _ = _build_billing(jobLedgerEntries=[])
+
+    with caplog.at_level(logging.WARNING):
+        entries = client.get_job_ledger_entries()
+
+    assert entries == []
+    assert any(
+        "jobLedgerEntries returned no rows" in r.getMessage()
+        and r.levelno == logging.WARNING
+        for r in caplog.records
+    )
+
+
+@pytest.mark.unit
+def test_job_ledger_entries_with_rows_logs_no_warning(caplog):
+    """A non-empty usage result does not log the empty-result warning."""
+    client, _ = _build_billing(
+        jobLedgerEntries=[{"no": "JLE-1", "jobNo": "P1", "entryType": "Usage"}]
+    )
+
+    with caplog.at_level(logging.WARNING):
+        client.get_job_ledger_entries()
+
+    assert not any(
+        "jobLedgerEntries returned no rows" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+@pytest.mark.unit
+def test_time_sheet_and_resource_mapping():
+    """Time-sheet entries and resources map their quantity/cost/price fields."""
+    client, _ = _build_billing(
+        timeSheetPostingEntries=[
+            {
+                "timeSheetNo": "TS-1",
+                "jobNo": "P1",
+                "resourceNo": "RES-01",
+                "quantity": 8.0,
+                "postingDate": "2026-01-20",
+            }
+        ],
+        resources=[{"no": "RES-01", "name": "Marc Solé", "unitCost": 25.0, "unitPrice": 60.0}],
+    )
+
+    ts = client.get_time_sheet_posting_entries()[0]
+    assert (ts.time_sheet_no, ts.project_id, ts.resource_no, ts.quantity) == (
+        "TS-1",
+        "P1",
+        "RES-01",
+        8.0,
+    )
+
+    resource = client.get_resources()[0]
+    assert (resource.id, resource.name, resource.unit_cost, resource.unit_price) == (
+        "RES-01",
+        "Marc Solé",
+        25.0,
+        60.0,
     )

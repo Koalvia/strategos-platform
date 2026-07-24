@@ -18,6 +18,7 @@ freeze it by overriding the ``get_reference_date`` dependency so assertions do n
 depend on the real clock.
 """
 
+from collections import Counter
 from datetime import date
 
 import pytest
@@ -27,9 +28,11 @@ from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
 from app.domains.dashboard.router import get_reference_date
+from app.domains.dashboard.service import DashboardService
 from app.domains.obligations.router import (
     get_reference_date as obligations_reference_date,
 )
+from app.integrations.business_central.mock_client import MockBusinessCentralClient
 from app.main import app
 
 SUMMARY_URL = "/api/v1/dashboard/summary"
@@ -87,7 +90,7 @@ def frozen_bc_user_client(db_session):
 
 @pytest.mark.integration
 def test_summary_returns_all_sections(frozen_client):
-    """The summary exposes the four KPI tiles and the two list sections."""
+    """The summary exposes the count KPIs, the two lists and the financial section."""
     resp = frozen_client.get(SUMMARY_URL)
     assert resp.status_code == 200
     body = resp.json()
@@ -98,11 +101,101 @@ def test_summary_returns_all_sections(frozen_client):
         "clientes_activos",
         "proximas_obligaciones",
         "mis_tareas_de_hoy",
+        "facturacion",
     }
     assert set(body["proyectos_activos"]) == {"active", "total"}
     assert set(body["clientes_activos"]) == {"active", "total"}
     assert set(body["tareas_pendientes"]) == {"pending", "total"}
     assert set(body["obligaciones_proximas"]) == {"count"}
+
+
+@pytest.mark.integration
+def test_financial_section_groups_projects_under_customers(frozen_client):
+    """The financial section is a per-customer table with projects nested.
+
+    Customers are capped at five rows and ordered by net billing desc; each
+    carries its projects (billing, usage cost, hours) as children, with the
+    customer's cost/hours rolled up from those projects.
+    """
+    body = frozen_client.get(SUMMARY_URL).json()
+
+    facturacion = body["facturacion"]
+    assert len(facturacion) <= 5
+    assert set(facturacion[0]) == {
+        "customer_id",
+        "customer_name",
+        "net_billed",
+        "cost",
+        "hours",
+        "projects",
+    }
+    net_amounts = [c["net_billed"] for c in facturacion]
+    assert net_amounts == sorted(net_amounts, reverse=True)
+
+    # cust-001 tops the list: 1500 + 2000 invoiced − 200 credited = 3300.
+    top = facturacion[0]
+    assert top["customer_id"] == "cust-001"
+    assert top["net_billed"] == 3300.0
+
+    # Its projects are nested underneath, and cost/hours roll up from them.
+    assert set(top["projects"][0]) == {
+        "project_id",
+        "project_name",
+        "billed",
+        "cost",
+        "hours",
+    }
+    # proj-002 (Gestió laboral) belongs to cust-001: billed 2000, cost 900, 16 h.
+    proj_002 = next(p for p in top["projects"] if p["project_id"] == "proj-002")
+    assert proj_002 == {
+        "project_id": "proj-002",
+        "project_name": "Gestió laboral",
+        "billed": 2000.0,
+        "cost": 900.0,
+        "hours": 16.0,
+    }
+    assert top["cost"] == round(sum(p["cost"] for p in top["projects"]), 2)
+    assert top["hours"] == round(sum(p["hours"] for p in top["projects"]), 2)
+
+
+class _CountingBCClient:
+    """Wraps a BC client, counting how many times each getter is called."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.calls: Counter[str] = Counter()
+
+    def __getattr__(self, name):
+        attr = getattr(self._inner, name)
+        if not callable(attr):
+            return attr
+
+        def wrapped(*args, **kwargs):
+            self.calls[name] += 1
+            return attr(*args, **kwargs)
+
+        return wrapped
+
+
+@pytest.mark.integration
+def test_dashboard_build_fetches_billing_lines_once(db_session):
+    """One dashboard load fetches the shared invoice/credit-memo lines once each.
+
+    Both billing breakdowns read the same lines; the dashboard fetches them once
+    and hands them to the service instead of letting each breakdown re-fetch.
+    """
+    bc = _CountingBCClient(MockBusinessCentralClient())
+    user = User(
+        name="Test User",
+        email="test@example.com",
+        hashed_password="not-a-real-hash",
+        is_verified=True,
+    )
+
+    DashboardService(db_session, bc).build_summary(user, FROZEN_TODAY)
+
+    assert bc.calls["get_sales_invoice_lines"] == 1
+    assert bc.calls["get_sales_cr_memo_lines"] == 1
 
 
 # --------------------------------------------------------------------------- #

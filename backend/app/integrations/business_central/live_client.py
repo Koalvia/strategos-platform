@@ -14,6 +14,15 @@ source (Strategos derives it), and an instance BC still returns without a
 ``dueDate`` remains undated (``Sin fecha``). ``userTasks`` is intentionally left
 unimplemented (a pending userTasks decision) and raises ``NotImplementedError``.
 
+The billing/costs entities (``salesInvoiceHeaders``/``salesInvoiceLines``,
+``salesCrMemoHeaders``/``salesCrMemoLines``, ``jobLedgerEntries``,
+``timeSheetPostingEntries``, ``resources``) are mapped here too. Their field
+names follow the confirmed spec (see ``docs/postman/``), but — like the
+``$filter``-based directory listings above — they have **not** been exercised
+against the real BC tenant yet, so treat the amount fields and the
+``entryType eq 'Usage'`` option value as pending live verification. The mock
+client's fixtures are shaped to the same DTOs and unblock the rest of the stack.
+
 Auth is OAuth2 client-credentials against Azure AD. The access token is cached in
 memory and only re-requested once it is close to expiry, so a burst of reads
 authenticates once. OData ``{"value": [...]}`` envelopes are unwrapped and
@@ -37,10 +46,17 @@ from app.integrations.business_central.client import (
 from app.integrations.business_central.models import (
     BCCustomer,
     BCCustomerPage,
+    BCJobLedgerEntry,
     BCObligation,
     BCProject,
     BCProjectObligation,
     BCProjectPage,
+    BCResource,
+    BCSalesCrMemoHeader,
+    BCSalesCrMemoLine,
+    BCSalesInvoiceHeader,
+    BCSalesInvoiceLine,
+    BCTimeSheetPostingEntry,
     BCUser,
     BCUserTask,
     CustomerStatus,
@@ -78,6 +94,17 @@ def _parse_date(value: str | None) -> date | None:
     if not text:
         return None
     return date.fromisoformat(text)
+
+
+def _parse_float(value) -> float:
+    """Coerce a BC monetary/quantity value to ``float``, ``0.0`` if absent/blank.
+
+    BC serializes amounts as JSON numbers, but a missing or empty field defaults
+    to ``0.0`` so aggregation never trips over a ``None``.
+    """
+    if value in (None, ""):
+        return 0.0
+    return float(value)
 
 
 def _encode_cursor(next_link: str) -> str:
@@ -535,6 +562,118 @@ class LiveBusinessCentralClient(BusinessCentralClient):
                 )
             )
         return instances
+
+    # -- Billing / Costs --------------------------------------------------------
+
+    def get_sales_invoice_headers(self) -> list[BCSalesInvoiceHeader]:
+        """Return sales-invoice headers from BC's ``salesInvoiceHeaders`` entity."""
+        return [
+            BCSalesInvoiceHeader(
+                document_no=row["no"],
+                customer_id=row.get("sellToCustomerNumber", ""),
+                posting_date=_parse_date(row.get("postingDate")),
+            )
+            for row in self._get_all("salesInvoiceHeaders")
+        ]
+
+    def get_sales_invoice_lines(self) -> list[BCSalesInvoiceLine]:
+        """Return sales-invoice lines from BC's ``salesInvoiceLines`` entity.
+
+        ``project_id`` (BC ``jobNo``) is blank on non-project lines; those still
+        count toward a customer's billing but not any project's.
+        """
+        return [
+            BCSalesInvoiceLine(
+                document_no=row.get("documentNo", ""),
+                line_amount=_parse_float(row.get("lineAmount")),
+                project_id=_clean_option(row.get("jobNo")) or None,
+                line_type=row.get("type"),
+                number=row.get("number"),
+            )
+            for row in self._get_all("salesInvoiceLines")
+        ]
+
+    def get_sales_cr_memo_headers(self) -> list[BCSalesCrMemoHeader]:
+        """Return credit-memo headers from BC's ``salesCrMemoHeaders`` entity."""
+        return [
+            BCSalesCrMemoHeader(
+                document_no=row["no"],
+                customer_id=row.get("sellToCustomerNumber", ""),
+                posting_date=_parse_date(row.get("postingDate")),
+            )
+            for row in self._get_all("salesCrMemoHeaders")
+        ]
+
+    def get_sales_cr_memo_lines(self) -> list[BCSalesCrMemoLine]:
+        """Return credit-memo lines from BC's ``salesCrMemoLines`` entity."""
+        return [
+            BCSalesCrMemoLine(
+                document_no=row.get("documentNo", ""),
+                line_amount=_parse_float(row.get("lineAmount")),
+                project_id=_clean_option(row.get("jobNo")) or None,
+            )
+            for row in self._get_all("salesCrMemoLines")
+        ]
+
+    def get_job_ledger_entries(self) -> list[BCJobLedgerEntry]:
+        """Return job-ledger *usage* entries from BC's ``jobLedgerEntries`` entity.
+
+        Scoped server-side to ``entryType eq 'Usage'`` (the cost side of a
+        project) so only cost rows come back.
+
+        BC Option values are case-sensitive and the ``'Usage'`` literal is not
+        yet verified against the live tenant. If the tenant spells it differently
+        (e.g. ``usage``/``USAGE``) the filter matches nothing, project costs
+        silently read as zero, and no error is raised — so an empty result is
+        logged as a warning to make that case noticeable in production.
+        """
+        rows = self._get_all(
+            "jobLedgerEntries", filter_clause="entryType eq 'Usage'"
+        )
+        if not rows:
+            logger.warning(
+                "jobLedgerEntries returned no rows for filter "
+                "\"entryType eq 'Usage'\"; project costs will be zero. BC Option "
+                "values are case-sensitive — if the live tenant spells the value "
+                "differently, verify the filter literal."
+            )
+        return [
+            BCJobLedgerEntry(
+                entry_no=row["no"],
+                project_id=row.get("jobNo", ""),
+                customer_id=_clean_option(row.get("customerNo")) or None,
+                entry_type=row.get("entryType"),
+                total_cost_lcy=_parse_float(row.get("totalCostLCY")),
+                line_type=row.get("type"),
+                posting_date=_parse_date(row.get("postingDate")),
+            )
+            for row in rows
+        ]
+
+    def get_time_sheet_posting_entries(self) -> list[BCTimeSheetPostingEntry]:
+        """Return time-sheet posting entries from BC's ``timeSheetPostingEntries``."""
+        return [
+            BCTimeSheetPostingEntry(
+                time_sheet_no=row.get("timeSheetNo", ""),
+                project_id=row.get("jobNo", ""),
+                resource_no=row.get("resourceNo", ""),
+                quantity=_parse_float(row.get("quantity")),
+                posting_date=_parse_date(row.get("postingDate")),
+            )
+            for row in self._get_all("timeSheetPostingEntries")
+        ]
+
+    def get_resources(self) -> list[BCResource]:
+        """Return billable resources from BC's ``resources`` entity."""
+        return [
+            BCResource(
+                id=row["no"],
+                name=row.get("name", ""),
+                unit_cost=_parse_float(row.get("unitCost")),
+                unit_price=_parse_float(row.get("unitPrice")),
+            )
+            for row in self._get_all("resources")
+        ]
 
     # -- Deferred entities ------------------------------------------------------
 

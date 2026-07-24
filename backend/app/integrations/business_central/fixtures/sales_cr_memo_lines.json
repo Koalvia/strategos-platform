@@ -1,0 +1,4 @@
+[
+  { "document_no": "CM-001", "line_amount": 200.0, "project_id": "proj-001" },
+  { "document_no": "CM-002", "line_amount": 100.0, "project_id": "proj-003" }
+]

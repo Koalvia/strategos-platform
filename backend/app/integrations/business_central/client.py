@@ -13,10 +13,17 @@ from abc import ABC, abstractmethod
 from app.integrations.business_central.models import (
     BCCustomer,
     BCCustomerPage,
+    BCJobLedgerEntry,
     BCObligation,
     BCProject,
     BCProjectObligation,
     BCProjectPage,
+    BCResource,
+    BCSalesCrMemoHeader,
+    BCSalesCrMemoLine,
+    BCSalesInvoiceHeader,
+    BCSalesInvoiceLine,
+    BCTimeSheetPostingEntry,
     BCUser,
     BCUserTask,
     CustomerStatus,
@@ -120,4 +127,50 @@ class BusinessCentralClient(ABC):
     @abstractmethod
     def get_project_obligations(self) -> list[BCProjectObligation]:
         """Return all project-obligation instances (BC ``GET /projectObligations``)."""
+        raise NotImplementedError
+
+    # -- Billing / Costs -------------------------------------------------------
+
+    @abstractmethod
+    def get_sales_invoice_headers(self) -> list[BCSalesInvoiceHeader]:
+        """Return all sales-invoice headers (BC ``GET /salesInvoiceHeaders``)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_sales_invoice_lines(self) -> list[BCSalesInvoiceLine]:
+        """Return all sales-invoice lines (BC ``GET /salesInvoiceLines``).
+
+        Each line links to its header on ``document_no``.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_sales_cr_memo_headers(self) -> list[BCSalesCrMemoHeader]:
+        """Return all sales credit-memo headers (BC ``GET /salesCrMemoHeaders``)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_sales_cr_memo_lines(self) -> list[BCSalesCrMemoLine]:
+        """Return all sales credit-memo lines (BC ``GET /salesCrMemoLines``).
+
+        Each line links to its header on ``document_no``.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_job_ledger_entries(self) -> list[BCJobLedgerEntry]:
+        """Return job-ledger *usage* entries (BC ``GET /jobLedgerEntries``).
+
+        Scoped to ``entryType eq 'Usage'`` (the cost side of a project).
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_time_sheet_posting_entries(self) -> list[BCTimeSheetPostingEntry]:
+        """Return all time-sheet posting entries (BC ``GET /timeSheetPostingEntries``)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_resources(self) -> list[BCResource]:
+        """Return all billable resources (BC ``GET /resources``)."""
         raise NotImplementedError

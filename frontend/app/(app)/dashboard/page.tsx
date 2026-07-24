@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react"
 
 import { authApi } from "@/features/auth/api"
 import { dashboardApi } from "@/features/dashboard/api"
+import { FacturacionResumen } from "@/features/dashboard/facturacion-resumen"
 import { KpiTile } from "@/features/dashboard/kpi-tile"
 import { MisTareas } from "@/features/dashboard/mis-tareas"
 import { ProximasObligaciones } from "@/features/dashboard/proximas-obligaciones"
@@ -82,7 +83,7 @@ export default function DashboardPage() {
           <Loader2 className="size-8 animate-spin text-[#caa53d]" />
         </div>
       ) : !summary ? (
-        <div className="mt-8 flex min-h-[240px] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white">
+        <div className="mt-8 flex min-h-60 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white">
           <p className="text-sm text-slate-500">
             No se ha podido cargar el resumen.
           </p>
@@ -111,6 +112,13 @@ export default function DashboardPage() {
               value={summary.clientesActivos.active}
               sublabel={`de ${summary.clientesActivos.total} totales`}
             />
+          </div>
+
+          {/* Unified financial table, sourced live from Business Central: each
+              customer groups its projects in an expandable accordion. Sits right
+              below the KPI tiles for a compact financial overview. */}
+          <div className="mt-6">
+            <FacturacionResumen groups={summary.facturacion} />
           </div>
 
           <div className="mt-6 grid gap-5 lg:grid-cols-3">

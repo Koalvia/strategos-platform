@@ -1,0 +1,8 @@
+[
+  { "entry_no": "JLE-001", "project_id": "proj-001", "customer_id": "cust-001", "entry_type": "Usage", "total_cost_lcy": 400.0, "line_type": "Resource", "posting_date": "2026-01-20" },
+  { "entry_no": "JLE-002", "project_id": "proj-001", "customer_id": "cust-001", "entry_type": "Usage", "total_cost_lcy": 150.0, "line_type": "Item", "posting_date": "2026-01-22" },
+  { "entry_no": "JLE-003", "project_id": "proj-002", "customer_id": "cust-001", "entry_type": "Usage", "total_cost_lcy": 900.0, "line_type": "Resource", "posting_date": "2026-02-18" },
+  { "entry_no": "JLE-004", "project_id": "proj-003", "customer_id": "cust-002", "entry_type": "Usage", "total_cost_lcy": 600.0, "line_type": "Resource", "posting_date": "2026-03-12" },
+  { "entry_no": "JLE-005", "project_id": "proj-004", "customer_id": "cust-003", "entry_type": "Usage", "total_cost_lcy": 500.0, "line_type": "Resource", "posting_date": "2026-04-10" },
+  { "entry_no": "JLE-006", "project_id": "proj-006", "customer_id": "cust-005", "entry_type": "Usage", "total_cost_lcy": 700.0, "line_type": "Resource", "posting_date": "2026-05-22" }
+]

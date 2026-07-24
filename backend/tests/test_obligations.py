@@ -362,6 +362,27 @@ class _LiveShapedBCClient(BusinessCentralClient):
             BCProjectObligation(id="po-1", project_id="P1", obligation_id="IRPF")
         ]
 
+    def get_sales_invoice_headers(self):
+        return []
+
+    def get_sales_invoice_lines(self):
+        return []
+
+    def get_sales_cr_memo_headers(self):
+        return []
+
+    def get_sales_cr_memo_lines(self):
+        return []
+
+    def get_job_ledger_entries(self):
+        return []
+
+    def get_time_sheet_posting_entries(self):
+        return []
+
+    def get_resources(self):
+        return []
+
 
 @pytest.mark.unit
 def test_catalog_carries_none_periodicity_for_live_shaped_obligation():
