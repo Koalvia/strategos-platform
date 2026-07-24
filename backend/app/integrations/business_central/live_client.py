@@ -640,7 +640,7 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         return [
             BCJobLedgerEntry(
                 entry_no=row["no"],
-                project_id=row.get("jobNo", ""),
+                project_id=_clean_option(row.get("jobNo")) or None,
                 customer_id=_clean_option(row.get("customerNo")) or None,
                 entry_type=row.get("entryType"),
                 total_cost_lcy=_parse_float(row.get("totalCostLCY")),
@@ -655,7 +655,7 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         return [
             BCTimeSheetPostingEntry(
                 time_sheet_no=row.get("timeSheetNo", ""),
-                project_id=row.get("jobNo", ""),
+                project_id=_clean_option(row.get("jobNo")) or None,
                 resource_no=row.get("resourceNo", ""),
                 quantity=_parse_float(row.get("quantity")),
                 posting_date=_parse_date(row.get("postingDate")),
