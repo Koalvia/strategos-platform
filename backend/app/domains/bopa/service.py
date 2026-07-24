@@ -29,6 +29,7 @@ from app import logger
 from app.integrations.bopa.client import BopaClient
 from app.integrations.bopa.models import BopaBulletinListItem
 
+from .matching import searchable_text, term_in_text
 from .models import BopaBulletin, BopaDocument
 from .schemas import (
     BulletinDetail,
@@ -361,10 +362,18 @@ class BopaService:
         limit: int = 50,
         offset: int = 0,
     ) -> DocumentSearchPage:
-        """Search documents matching any of a client's identifiers or projects.
+        """Search documents that genuinely mention a client's name, NIF or projects.
 
-        Matches case-insensitively (ILIKE) on BopaDocument.title OR BopaDocument.html_content.
-        Returns a paginated DocumentSearchPage containing DocumentSummary items.
+        A document matches only when one of the client's terms appears as complete
+        word(s) — the same whole-word rule the BOPA analyzer uses (see
+        ``app.domains.bopa.matching``) — so this never surfaces a loose-substring
+        false positive (a homonym, or a fragment inside a larger word) for an
+        entity that is not the client.
+
+        Implemented as a cheap DB-side ILIKE **substring prefilter** (whole-word
+        matches are a subset, so it drops no real match) followed by the
+        authoritative whole-word test in Python, which also decides the ``total``
+        and the page slice. Ordered by ``article_date`` desc then ``id`` desc.
         """
         projects_list = proyectos or []
         raw_terms = [nombre, nif] + projects_list
@@ -373,36 +382,41 @@ class BopaService:
         if not terms:
             return DocumentSearchPage(items=[], total=0)
 
-        # Setup the base query with joined load
+        # DB-side substring prefilter to narrow the candidate rows.
         query = (
             self.db.query(BopaDocument)
             .join(BopaDocument.bulletin)
             .options(contains_eager(BopaDocument.bulletin))
         )
-
-        # Build the composite OR filter for each term
         or_conditions = []
         for term in terms:
             escaped_term = term.replace("%", "\\%").replace("_", "\\_")
             like_pattern = f"%{escaped_term}%"
-
             or_conditions.append(BopaDocument.title.ilike(like_pattern, escape="\\"))
-            or_conditions.append(BopaDocument.html_content.ilike(like_pattern, escape="\\"))
-
-        query = query.filter(or_(*or_conditions))
-
-        # Count, paginate and map back to Pydantic schemas
-        total = query.count()
-        documents = (
-            query.order_by(
-                BopaDocument.article_date.desc(), BopaDocument.id.desc()
+            or_conditions.append(
+                BopaDocument.html_content.ilike(like_pattern, escape="\\")
             )
-            .offset(offset)
-            .limit(limit)
+        candidates = (
+            query.filter(or_(*or_conditions))
+            .order_by(BopaDocument.article_date.desc(), BopaDocument.id.desc())
             .all()
         )
 
+        # Authoritative whole-word filter (the guarantee this is really about the
+        # client), then paginate in Python.
+        matched = [
+            doc
+            for doc in candidates
+            if any(
+                term_in_text(term, searchable_text(doc.title, doc.html_content))
+                for term in terms
+            )
+        ]
+
         return DocumentSearchPage(
-            items=[DocumentSummary.model_validate(d) for d in documents],
-            total=total,
+            items=[
+                DocumentSummary.model_validate(d)
+                for d in matched[offset : offset + limit]
+            ],
+            total=len(matched),
         )
