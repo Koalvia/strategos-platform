@@ -282,25 +282,46 @@ def prune_false_positive_matches() -> int:
     db = SessionLocal()
     try:
         deleted = 0
-        matches = (
-            db.query(BopaMatch).options(joinedload(BopaMatch.document)).all()
-        )
-        for match in matches:
-            doc = match.document
-            text = (
-                searchable_text(doc.title, doc.html_content) if doc is not None else ""
+        # Stream the match ids first (cheap — just integers), then load the full
+        # rows (with their documents' potentially large ``html_content``) one
+        # bounded batch at a time, committing per batch. This keeps peak memory
+        # bounded even for a corpus of tens of thousands of matches — the same
+        # pattern the customer-scoped scan uses — instead of pulling every body
+        # into memory at once.
+        match_ids = [row[0] for row in db.query(BopaMatch.id)]
+
+        for start in range(0, len(match_ids), _SCAN_BATCH_SIZE):
+            batch_ids = match_ids[start : start + _SCAN_BATCH_SIZE]
+            matches = (
+                db.query(BopaMatch)
+                .options(joinedload(BopaMatch.document))
+                .filter(BopaMatch.id.in_(batch_ids))
+                .all()
             )
-            if term_in_text(match.matched_term, text):
-                continue
-            # Remove the dependent alert first, then the match — explicit rather
-            # than relying on the FK's ON DELETE CASCADE, which SQLite does not
-            # enforce unless PRAGMA foreign_keys is on.
-            db.query(Alert).filter(Alert.bopa_match_id == match.id).delete(
-                synchronize_session=False
-            )
-            db.delete(match)
-            deleted += 1
-        db.commit()
+            for match in matches:
+                doc = match.document
+                text = (
+                    searchable_text(doc.title, doc.html_content)
+                    if doc is not None
+                    else ""
+                )
+                # Keep the match only if its term still hits as whole word(s). An
+                # orphaned match (no document) yields empty text and is pruned too
+                # — it can no longer link anywhere.
+                if term_in_text(match.matched_term, text):
+                    continue
+                # Remove the dependent alert first, then the orphaned/false-positive
+                # match — explicit rather than relying on the FK's ON DELETE
+                # CASCADE, which SQLite does not enforce unless PRAGMA foreign_keys
+                # is on.
+                db.query(Alert).filter(Alert.bopa_match_id == match.id).delete(
+                    synchronize_session=False
+                )
+                db.delete(match)
+                deleted += 1
+            # Commit per batch so a crash mid-run keeps earlier batches' progress.
+            db.commit()
+
         logger.info(
             f"BOPA prune: removed {deleted} false-positive matches (and alerts)."
         )

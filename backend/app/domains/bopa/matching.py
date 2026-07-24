@@ -41,5 +41,10 @@ def term_in_text(term: str | None, text: str) -> bool:
 
 
 def searchable_text(title: str | None, html_content: str | None) -> str:
-    """The lowercased title + body a BOPA document is matched against."""
-    return f"{title or ''} {html_content or ''}".lower()
+    """The title + body a BOPA document is matched against.
+
+    Case is not normalised here: :func:`compile_term` matches with
+    ``re.IGNORECASE``, so lowercasing the (potentially large) body as well would
+    just be redundant work.
+    """
+    return f"{title or ''} {html_content or ''}"

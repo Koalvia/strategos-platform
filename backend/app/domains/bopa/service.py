@@ -45,6 +45,11 @@ from .schemas import (
 # only its reference URLs.
 _HTML_FILE_TYPES = ("html", "htmlCopy")
 
+# The per-client search streams its ILIKE candidates in batches of this size so a
+# very common single-word name (whose substring prefilter can return many rows)
+# never pulls every ``html_content`` body into memory at once.
+_CLIENT_SEARCH_BATCH_SIZE = 500
+
 
 class BopaService:
     """Persist and serve synced BOPA bulletins and documents."""
@@ -374,6 +379,12 @@ class BopaService:
         matches are a subset, so it drops no real match) followed by the
         authoritative whole-word test in Python, which also decides the ``total``
         and the page slice. Ordered by ``article_date`` desc then ``id`` desc.
+
+        Candidates are streamed in bounded batches (``yield_per``) and each match
+        is converted to its lightweight :class:`DocumentSummary` immediately, so
+        the large ``html_content`` bodies are only ever held one batch at a time
+        — a very common single-word name whose prefilter matches many rows does
+        not pull every body into memory at once.
         """
         projects_list = proyectos or []
         raw_terms = [nombre, nif] + projects_list
@@ -396,27 +407,25 @@ class BopaService:
             or_conditions.append(
                 BopaDocument.html_content.ilike(like_pattern, escape="\\")
             )
-        candidates = (
+        stream = (
             query.filter(or_(*or_conditions))
             .order_by(BopaDocument.article_date.desc(), BopaDocument.id.desc())
-            .all()
+            .yield_per(_CLIENT_SEARCH_BATCH_SIZE)
         )
 
         # Authoritative whole-word filter (the guarantee this is really about the
-        # client), then paginate in Python.
-        matched = [
-            doc
-            for doc in candidates
+        # client). Keep only the small summaries, expunging each streamed row so
+        # its body is released instead of piling up in the session's identity map.
+        matched: list[DocumentSummary] = []
+        for doc in stream:
             if any(
                 term_in_text(term, searchable_text(doc.title, doc.html_content))
                 for term in terms
-            )
-        ]
+            ):
+                matched.append(DocumentSummary.model_validate(doc))
+            self.db.expunge(doc)
 
         return DocumentSearchPage(
-            items=[
-                DocumentSummary.model_validate(d)
-                for d in matched[offset : offset + limit]
-            ],
+            items=matched[offset : offset + limit],
             total=len(matched),
         )
