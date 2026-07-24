@@ -1,12 +1,10 @@
 """Celery tasks for the BOPA domain."""
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import joinedload
 
 from app import logger
 from app.celery_app import celery
 from app.core.dependencies import get_bopa_client, get_business_central_client
 from app.db.session import SessionLocal
-from app.domains.alerts.models import Alert
 from app.domains.alerts.service import AlertsService
 from app.domains.customers.service import CustomersService
 
@@ -261,74 +259,6 @@ def analyze_bopa_matches_for_customer(customer_id: str) -> int:
     except Exception as e:
         db.rollback()
         logger.error(f"BOPA customer scan failed for {customer_id}: {str(e)}")
-        raise
-    finally:
-        db.close()
-
-
-def prune_false_positive_matches() -> int:
-    """Delete stored BOPA matches (and their alerts) that fail the whole-word rule.
-
-    A one-off cleanup for matches created under the old naked-substring rule: a
-    match whose ``matched_term`` no longer appears as whole word(s) in its own
-    document is a false positive, so it is removed together with its alert — it is
-    no longer shown and no longer gives a link to anything. Newly created matches
-    already satisfy the rule (see :func:`_match_document`), so this is idempotent:
-    a second run finds nothing left to remove. Returns the number of matches
-    deleted.
-
-    Runs outside FastAPI's request scope, so it builds its own DB session.
-    """
-    db = SessionLocal()
-    try:
-        deleted = 0
-        # Stream the match ids first (cheap — just integers), then load the full
-        # rows (with their documents' potentially large ``html_content``) one
-        # bounded batch at a time, committing per batch. This keeps peak memory
-        # bounded even for a corpus of tens of thousands of matches — the same
-        # pattern the customer-scoped scan uses — instead of pulling every body
-        # into memory at once.
-        match_ids = [row[0] for row in db.query(BopaMatch.id)]
-
-        for start in range(0, len(match_ids), _SCAN_BATCH_SIZE):
-            batch_ids = match_ids[start : start + _SCAN_BATCH_SIZE]
-            matches = (
-                db.query(BopaMatch)
-                .options(joinedload(BopaMatch.document))
-                .filter(BopaMatch.id.in_(batch_ids))
-                .all()
-            )
-            for match in matches:
-                doc = match.document
-                text = (
-                    searchable_text(doc.title, doc.html_content)
-                    if doc is not None
-                    else ""
-                )
-                # Keep the match only if its term still hits as whole word(s). An
-                # orphaned match (no document) yields empty text and is pruned too
-                # — it can no longer link anywhere.
-                if term_in_text(match.matched_term, text):
-                    continue
-                # Remove the dependent alert first, then the orphaned/false-positive
-                # match — explicit rather than relying on the FK's ON DELETE
-                # CASCADE, which SQLite does not enforce unless PRAGMA foreign_keys
-                # is on.
-                db.query(Alert).filter(Alert.bopa_match_id == match.id).delete(
-                    synchronize_session=False
-                )
-                db.delete(match)
-                deleted += 1
-            # Commit per batch so a crash mid-run keeps earlier batches' progress.
-            db.commit()
-
-        logger.info(
-            f"BOPA prune: removed {deleted} false-positive matches (and alerts)."
-        )
-        return deleted
-    except Exception:
-        db.rollback()
-        logger.exception("BOPA prune of false-positive matches failed")
         raise
     finally:
         db.close()
