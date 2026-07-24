@@ -8,6 +8,7 @@ from app.db.session import SessionLocal
 from app.domains.alerts.service import AlertsService
 from app.domains.customers.service import CustomersService
 
+from .matching import searchable_text, term_in_text
 from .models import BopaAnalysisLog, BopaBulletin, BopaDocument, BopaMatch
 from .service import BopaService
 
@@ -16,39 +17,46 @@ from .service import BopaService
 _SCAN_BATCH_SIZE = 500
 
 
-def _searchable_text(doc: BopaDocument) -> str:
-    """Lowercased title + body used for substring matching against a document."""
-    return f"{doc.title} {doc.html_content or ''}".lower()
-
-
 def _match_document(doc, customers, projects) -> list[BopaMatch]:
     """Build the customer/project matches for a single document.
 
-    Matches on ``customer.name`` and ``project.name`` (NIF is intentionally not
-    considered here — the global analyzer never matched on it). Deduplicates on
-    ``(customer_id, document_id)`` — the ``uq_bopa_match_customer_doc`` constraint
-    allows only one match per customer per document — and lets a project-level
-    match override a bare customer-name match for the same key.
+    A customer matches when its **name** or its **NIF** appears as whole word(s)
+    in the document (word-boundary, not a naked substring — see
+    ``app.domains.bopa.matching``); the name is the preferred ``matched_term`` and the
+    NIF is the fallback label when only the NIF hits. Projects match on their
+    name. This word-boundary rule is the guarantee that an alert is genuinely
+    about one of our customers: a loose-substring false positive never becomes a
+    match, so it is never turned into an alert and never gets a link.
+
+    Deduplicates on ``(customer_id, document_id)`` — the
+    ``uq_bopa_match_customer_doc`` constraint allows only one match per customer
+    per document — and lets a project-level match override a bare customer match
+    for the same key.
     """
-    searchable_text = _searchable_text(doc)
+    text = searchable_text(doc.title, doc.html_content)
     doc_matches: dict[tuple[str, int], BopaMatch] = {}
 
-    # Check for customer name matches
+    # Customer name/NIF matches (name preferred as the label, NIF as fallback).
     for customer in customers:
-        if customer.name and customer.name.lower() in searchable_text:
-            key = (customer.id, doc.id)
-            doc_matches.setdefault(
-                key,
-                BopaMatch(
-                    customer_id=customer.id,
-                    document_id=doc.id,
-                    matched_term=customer.name,
-                ),
-            )
+        if term_in_text(customer.name, text):
+            matched_term = customer.name
+        elif term_in_text(getattr(customer, "nif", None), text):
+            matched_term = getattr(customer, "nif", None)
+        else:
+            continue
+        key = (customer.id, doc.id)
+        doc_matches.setdefault(
+            key,
+            BopaMatch(
+                customer_id=customer.id,
+                document_id=doc.id,
+                matched_term=matched_term,
+            ),
+        )
 
-    # Check for project name matches (override any bare customer match)
+    # Project name matches (override any bare customer match for the same key).
     for project in projects:
-        if project.name and project.name.lower() in searchable_text:
+        if term_in_text(project.name, text):
             key = (project.customer_id, doc.id)
             doc_matches[key] = BopaMatch(
                 customer_id=project.customer_id,
@@ -175,9 +183,8 @@ def analyze_bopa_matches_for_customer(customer_id: str) -> int:
     * It scans **all** documents (not just unanalyzed bulletins), skipping the
       ones already matched for this customer, so a customer added after a bulletin
       was globally analyzed still gets matched.
-    * It matches on the customer's name, NIF **and** project names (the customer
-      search on the same screen matches these three; the global analyzer ignores
-      NIF).
+    * It matches on the customer's name, NIF **and** project names — the same
+      whole-word rule the global analyzer now uses (see ``_match_document``).
 
     Idempotent — re-running only adds newly-matched documents. Returns the number
     of new matches created. Raises 404 (via ``CustomersService``) if the customer
@@ -191,7 +198,6 @@ def analyze_bopa_matches_for_customer(customer_id: str) -> int:
         customer_projects = [
             p for p in bc_client.get_projects() if p.customer_id == customer_id
         ]
-        nif = (customer.nif or "").strip()
 
         # Documents already matched for this customer — skip them so re-scans stay
         # idempotent and we never trip uq_bopa_match_customer_doc.
@@ -222,20 +228,11 @@ def analyze_bopa_matches_for_customer(customer_id: str) -> int:
             )
 
             for doc in documents:
-                # Name + project matches (CustomerResponse exposes .id/.name, so
-                # it slots into _match_document exactly like a BCCustomer).
+                # Name / NIF / project matches. CustomerResponse exposes
+                # .id/.name/.nif, so it slots into _match_document exactly like a
+                # BCCustomer — NIF matching lives there now (whole-word), so no
+                # separate substring fallback is needed here.
                 doc_matches = _match_document(doc, [customer], customer_projects)
-
-                # NIF fallback: only when nothing else matched this document, to
-                # avoid a second row for the same (customer, document) key.
-                if not doc_matches and nif and nif.lower() in _searchable_text(doc):
-                    doc_matches = [
-                        BopaMatch(
-                            customer_id=customer_id,
-                            document_id=doc.id,
-                            matched_term=nif,
-                        )
-                    ]
 
                 for match in doc_matches:
                     # A concurrent scoped scan for the same customer may have
