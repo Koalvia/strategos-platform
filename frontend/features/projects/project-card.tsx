@@ -19,10 +19,11 @@ function formatDate(isoDate: string | null): string {
   return `${day}/${month}/${year}`
 }
 
-// Colour the next-obligation line by its derived due state: red when overdue,
-// amber when upcoming, neutral otherwise.
+// Colour the next-obligation line by its derived due state. Overdue keeps a
+// neutral text colour and is instead flagged with a red dot (see below) — a
+// fully-red line read as if the due date itself were wrong.
 const OBLIGATION_COLOR: Record<ProjectObligation["status"], string> = {
-  Vencido: "text-red-600",
+  Vencido: "text-slate-700",
   Próximo: "text-amber-600",
   "Al día": "text-slate-500",
   "Sin fecha": "text-slate-400",
@@ -75,10 +76,16 @@ export function ProjectCard({ project, nextObligation }: ProjectCardProps) {
           {nextObligation ? (
             <p
               className={cn(
-                "text-sm font-semibold",
+                "flex items-center gap-1.5 text-sm font-semibold",
                 OBLIGATION_COLOR[nextObligation.status],
               )}
             >
+              {nextObligation.status === "Vencido" ? (
+                <span
+                  className="inline-block h-2 w-2 shrink-0 rounded-full bg-red-600"
+                  aria-hidden
+                />
+              ) : null}
               Próx: {nextObligation.obligation.name} · {formatDate(nextObligation.dueDate)}
             </p>
           ) : null}

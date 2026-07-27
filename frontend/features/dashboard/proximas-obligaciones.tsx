@@ -4,7 +4,10 @@ import { cn } from "@/lib/utils"
 import type { ObligationStatus, ProjectObligation } from "@/lib/types"
 
 interface ProximasObligacionesProps {
-  obligations: ProjectObligation[]
+  // null when Business Central could not serve this section — rendered as an
+  // explicit "unavailable" notice rather than as "no hay obligaciones", which
+  // would wrongly suggest there is nothing due.
+  obligations: ProjectObligation[] | null
 }
 
 // Format an ISO date (YYYY-MM-DD) as DD/MM/YYYY without timezone drift.
@@ -38,7 +41,11 @@ export function ProximasObligaciones({ obligations }: ProximasObligacionesProps)
       <h2 className="border-b border-slate-100 px-6 py-5 text-lg font-bold text-slate-900">
         Próximas obligaciones
       </h2>
-      {obligations.length === 0 ? (
+      {obligations === null ? (
+        <p className="px-6 py-12 text-center text-sm text-slate-500">
+          No se han podido cargar las obligaciones desde Business Central.
+        </p>
+      ) : obligations.length === 0 ? (
         <p className="px-6 py-12 text-center text-sm text-slate-500">
           No hay obligaciones próximas.
         </p>

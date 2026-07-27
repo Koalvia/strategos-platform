@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import DOMPurify from "isomorphic-dompurify"
 
 import { Button } from "@/components/ui/button"
@@ -35,9 +35,28 @@ function Field({
   )
 }
 
-export default function BopaDocumentDetailPage() {
+// A generic loading card, reused by the Suspense fallback and the fetch state.
+function LoadingCard() {
+  return (
+    <div className="px-8 py-8">
+      <div className="rounded-lg border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
+        Cargando documento...
+      </div>
+    </div>
+  )
+}
+
+function BopaDocumentDetailContent() {
   const params = useParams<{ id: string }>()
   const id = params.id
+
+  // When the document is opened from a customer's "Documentos BOPA Coincidentes"
+  // table, that page passes ?fromCustomer=<id> so we can send the user back to
+  // the client area instead of the global BOPA list.
+  const searchParams = useSearchParams()
+  const fromCustomer = searchParams.get("fromCustomer")
+  const backHref = fromCustomer ? `/clientes/${fromCustomer}` : "/bopa"
+  const backLabel = fromCustomer ? "← Volver al cliente" : "← BOPA"
 
   const [document, setDocument] = useState<BopaDocumentDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,13 +104,7 @@ export default function BopaDocumentDetailPage() {
   }, [htmlContent])
 
   if (loading) {
-    return (
-      <div className="px-8 py-8">
-        <div className="rounded-lg border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
-          Cargando documento...
-        </div>
-      </div>
-    )
+    return <LoadingCard />
   }
 
   if (notFound || !document) {
@@ -100,10 +113,10 @@ export default function BopaDocumentDetailPage() {
         <div className="rounded-lg border border-slate-200 bg-white px-6 py-12 text-center">
           <p className="text-sm text-slate-500">No se ha encontrado el documento.</p>
           <Link
-            href="/bopa"
+            href={backHref}
             className="mt-4 inline-block text-sm font-semibold text-slate-900 underline"
           >
-            Volver a BOPA
+            {fromCustomer ? "Volver al cliente" : "Volver a BOPA"}
           </Link>
         </div>
       </div>
@@ -112,8 +125,8 @@ export default function BopaDocumentDetailPage() {
 
   return (
     <div className="px-8 py-8">
-      <Link href="/bopa" className="text-sm text-slate-500 hover:text-slate-900">
-        ← BOPA
+      <Link href={backHref} className="text-sm text-slate-500 hover:text-slate-900">
+        {backLabel}
       </Link>
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
@@ -155,5 +168,15 @@ export default function BopaDocumentDetailPage() {
         )}
       </Card>
     </div>
+  )
+}
+
+export default function BopaDocumentDetailPage() {
+  // `useSearchParams` (used inside the content) must be wrapped in a Suspense
+  // boundary for the App Router build.
+  return (
+    <Suspense fallback={<LoadingCard />}>
+      <BopaDocumentDetailContent />
+    </Suspense>
   )
 }

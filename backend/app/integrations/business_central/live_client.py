@@ -12,7 +12,9 @@ and ``dueDateRule`` and ``projectObligation`` now carries ``subject``, ``dueDate
 and ``submissionDate``, so those fields are mapped through. ``status`` has no BC
 source (Strategos derives it), and an instance BC still returns without a
 ``dueDate`` remains undated (``Sin fecha``). ``userTasks`` is intentionally left
-unimplemented (a pending userTasks decision) and raises ``NotImplementedError``.
+unimplemented (a pending userTasks decision): ``get_user_tasks`` logs a warning
+and returns ``[]`` rather than raising, so tasks/users/dashboard features that
+depend on it degrade to an empty state instead of failing outright.
 
 The billing/costs entities (``salesInvoiceHeaders``/``salesInvoiceLines``,
 ``salesCrMemoHeaders``/``salesCrMemoLines``, ``jobLedgerEntries``,
@@ -75,10 +77,17 @@ _EXPIRY_SKEW_SECONDS = 60
 # escape ``_x0020_`` (a single space). Both mean "no value".
 _BLANK_OPTIONS = {"", "_x0020_"}
 
-_NOT_IMPLEMENTED_MSG = (
-    "{method} is not implemented by the live Business Central client. "
-    "userTasks is excluded from this integration "
-    "(see the pending userTasks decision)."
+# How many ids go into one ``or``-joined ``$filter`` before it is split across
+# requests. Each clause costs ~25 URL-encoded characters, so an unbounded list
+# builds a URL Business Central rejects with **HTTP 414 Request-Uri Too Long**
+# (a real tenant has hundreds of customers, where the mock fixtures had ~15 and
+# never reached the limit). 50 keeps the query string comfortably short.
+_MAX_FILTER_IDS = 50
+
+_NOT_IMPLEMENTED_WARNING = (
+    "get_user_tasks is not implemented by the live Business Central client "
+    "(userTasks is excluded pending a decision on its BC source) — returning "
+    "an empty list."
 )
 
 
@@ -236,6 +245,26 @@ class LiveBusinessCentralClient(BusinessCentralClient):
             params = None
         return rows
 
+    def _get_all_by_ids(
+        self, entity: str, field: str, ids: list[str]
+    ) -> list[dict]:
+        """Read every ``entity`` row whose ``field`` matches one of ``ids``.
+
+        The ids are split into batches of ``_MAX_FILTER_IDS`` and each batch is
+        one ``or``-joined ``$filter`` request, because a single filter listing
+        hundreds of ids produces a URL Business Central rejects with HTTP 414.
+        Duplicate ids are collapsed first so a repeated id costs nothing.
+        """
+        unique_ids = list(dict.fromkeys(ids))
+        rows: list[dict] = []
+        for start in range(0, len(unique_ids), _MAX_FILTER_IDS):
+            batch = unique_ids[start : start + _MAX_FILTER_IDS]
+            id_filter = " or ".join(
+                f"{field} eq '{_escape_odata_literal(value)}'" for value in batch
+            )
+            rows.extend(self._get_all(entity, filter_clause=id_filter))
+        return rows
+
     # -- Implemented entities ---------------------------------------------------
 
     def get_customers(self) -> list[BCCustomer]:
@@ -334,12 +363,8 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         if not customer_ids:
             return {}
 
-        id_filter = " or ".join(
-            f"billToCustomerNo eq '{_escape_odata_literal(cid)}'"
-            for cid in customer_ids
-        )
         counts: dict[str, int] = {}
-        for row in self._get_all("projects", filter_clause=id_filter):
+        for row in self._get_all_by_ids("projects", "billToCustomerNo", customer_ids):
             if self._map_project_status(row.get("status")) is ProjectStatus.active:
                 customer_id = row.get("billToCustomerNo", "")
                 counts[customer_id] = counts.get(customer_id, 0) + 1
@@ -382,15 +407,16 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         project_type: str | None = None,
         entity_type: str | None = None,
         status: ProjectStatus | None = None,
+        customer_id: str | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
     ) -> BCProjectPage:
         """Return one page of projects, filtering server-side via OData ``$filter``.
 
-        ``search``/``status`` are translated into a BC ``$filter`` expression
-        (see ``_projects_filter``), the same "relies on standard OData v4
-        query capabilities, pending live verification" caveat as
-        ``get_customers_page`` applies here too.
+        ``search``/``status``/``customer_id`` are translated into a BC
+        ``$filter`` expression (see ``_projects_filter``), the same "relies on
+        standard OData v4 query capabilities, pending live verification"
+        caveat as ``get_customers_page`` applies here too.
 
         ``project_type``/``entity_type`` have no BC source field yet (see
         ``BCProject``) — every live row leaves them unset, so a page can never
@@ -414,7 +440,7 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         else:
             url = f"{self._base_url}/projects"
             params = {"$top": str(page_size)}
-            filter_clause = self._projects_filter(search, status)
+            filter_clause = self._projects_filter(search, status, customer_id)
             if filter_clause:
                 params["$filter"] = filter_clause
 
@@ -441,17 +467,25 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         )
 
     @staticmethod
-    def _projects_filter(search: str | None, status: ProjectStatus | None) -> str | None:
-        """Build the OData ``$filter`` for the projects directory's search/status.
+    def _projects_filter(
+        search: str | None,
+        status: ProjectStatus | None,
+        customer_id: str | None = None,
+    ) -> str | None:
+        """Build the OData ``$filter`` for the projects directory's search/status/customer.
 
         ``status`` mirrors ``_map_project_status``: only ``Completed`` (case-
         insensitively) means Inactivo, so "Activo" excludes just that value
-        rather than matching a specific "Open" one.
+        rather than matching a specific "Open" one. ``customer_id`` matches
+        ``billToCustomerNo`` exactly, the same field ``_active_project_counts_for``
+        filters on.
         """
         clauses: list[str] = []
         if search:
             needle = _escape_odata_literal(search)
             clauses.append(f"contains(description,'{needle}')")
+        if customer_id:
+            clauses.append(f"billToCustomerNo eq '{_escape_odata_literal(customer_id)}'")
         if status is ProjectStatus.active:
             clauses.append("tolower(status) ne 'completed'")
         elif status is ProjectStatus.inactive:
@@ -464,16 +498,17 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         A direct, scoped ``/customers`` read — unlike ``get_customers()``,
         this never triggers the company-wide projects fetch used to compute
         ``active_project_count``, since callers here only want names.
+
+        Large id lists are batched (see ``_get_all_by_ids``); a real tenant's
+        billing table can reference hundreds of customers at once, which as a
+        single ``$filter`` exceeded Business Central's URL limit.
         """
         if not customer_ids:
             return {}
 
-        id_filter = " or ".join(
-            f"no eq '{_escape_odata_literal(cid)}'" for cid in customer_ids
-        )
         return {
             row["no"]: row.get("name", "")
-            for row in self._get_all("customers", filter_clause=id_filter)
+            for row in self._get_all_by_ids("customers", "no", customer_ids)
         }
 
     def get_users(self) -> list[BCUser]:
@@ -566,11 +601,19 @@ class LiveBusinessCentralClient(BusinessCentralClient):
     # -- Billing / Costs --------------------------------------------------------
 
     def get_sales_invoice_headers(self) -> list[BCSalesInvoiceHeader]:
-        """Return sales-invoice headers from BC's ``salesInvoiceHeaders`` entity."""
+        """Return sales-invoice headers from BC's ``salesInvoiceHeaders`` entity.
+
+        The customer comes from ``billToCustomerNo`` — the same field
+        ``_map_project_row`` uses to attribute a project to its customer, so the
+        dashboard's per-customer table reconciles its invoice totals against its
+        nested project rows instead of splitting a customer whose bill-to and
+        sell-to differ. (``sellToCustomerNo`` is also available should billing
+        ever need the sold-to party instead.)
+        """
         return [
             BCSalesInvoiceHeader(
                 document_no=row["no"],
-                customer_id=row.get("sellToCustomerNumber", ""),
+                customer_id=row.get("billToCustomerNo", ""),
                 posting_date=_parse_date(row.get("postingDate")),
             )
             for row in self._get_all("salesInvoiceHeaders")
@@ -598,7 +641,7 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         return [
             BCSalesCrMemoHeader(
                 document_no=row["no"],
-                customer_id=row.get("sellToCustomerNumber", ""),
+                customer_id=row.get("billToCustomerNo", ""),
                 posting_date=_parse_date(row.get("postingDate")),
             )
             for row in self._get_all("salesCrMemoHeaders")
@@ -651,12 +694,19 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         ]
 
     def get_time_sheet_posting_entries(self) -> list[BCTimeSheetPostingEntry]:
-        """Return time-sheet posting entries from BC's ``timeSheetPostingEntries``."""
+        """Return time-sheet posting entries from BC's ``timeSheetPostingEntries``.
+
+        Unlike the other project-scoped entities, this one carries **no
+        ``jobNo``**: the project is referenced by ``documentNo`` (which holds the
+        job number, e.g. ``P00011``). It also exposes no resource field at all,
+        so ``resource_no`` is left unset — the entity's fields are ``entryNo``,
+        ``timeSheetNo``, ``timeSheetLineNo``, ``timeSheetDate``, ``quantity``,
+        ``documentNo``, ``postingDate`` and ``description``.
+        """
         return [
             BCTimeSheetPostingEntry(
                 time_sheet_no=row.get("timeSheetNo", ""),
-                project_id=_clean_option(row.get("jobNo")) or None,
-                resource_no=row.get("resourceNo", ""),
+                project_id=_clean_option(row.get("documentNo")) or None,
                 quantity=_parse_float(row.get("quantity")),
                 posting_date=_parse_date(row.get("postingDate")),
             )
@@ -678,6 +728,11 @@ class LiveBusinessCentralClient(BusinessCentralClient):
     # -- Deferred entities ------------------------------------------------------
 
     def get_user_tasks(self) -> list[BCUserTask]:
-        raise NotImplementedError(
-            _NOT_IMPLEMENTED_MSG.format(method="get_user_tasks")
-        )
+        """Return ``[]``: userTasks is excluded pending a decision on its BC source.
+
+        Callers (tasks, users directory, dashboard KPIs) all treat "no tasks"
+        as a valid, empty state, so this degrades gracefully instead of
+        raising and taking down every feature that touches tasks.
+        """
+        logger.warning(_NOT_IMPLEMENTED_WARNING)
+        return []

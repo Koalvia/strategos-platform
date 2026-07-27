@@ -13,7 +13,8 @@ confirmed BC payloads (no real Strategos client data / PII). They cover:
 * the obligations / projectObligations mapping, including the
   ``periodicity``/``dueDateRule`` and ``subject``/``dueDate``/``submissionDate``
   fields BC now provides (and the undated fallback when a date is absent);
-* that the still-deferred ``userTasks`` entity raises ``NotImplementedError``.
+* that the still-deferred ``userTasks`` entity returns ``[]`` with a warning
+  logged, instead of raising.
 """
 
 import logging
@@ -412,6 +413,26 @@ def test_projects_page_sends_top_and_combined_filter():
 
 
 @pytest.mark.unit
+def test_projects_page_filters_by_customer_id():
+    """``customer_id`` is pushed down as a ``billToCustomerNo`` filter clause,
+    combined with ``search``/``status`` — this is what makes a customer's
+    projects findable regardless of how many total projects the page window
+    would otherwise cover."""
+    rows = [{"no": "P1", "description": "Fiscal advisory", "status": "Open"}]
+    client, requests = _build_projects_page(projects_rows=rows)
+
+    client.get_projects_page(
+        search="fiscal", status=ProjectStatus.active, customer_id="C1"
+    )
+
+    projects_request = next(r for r in requests if r.url.path.endswith("/projects"))
+    filter_clause = projects_request.url.params["$filter"]
+    assert "billToCustomerNo eq 'C1'" in filter_clause
+    assert "contains(description,'fiscal')" in filter_clause
+    assert "tolower(status) ne 'completed'" in filter_clause
+
+
+@pytest.mark.unit
 def test_projects_page_status_inactive_matches_completed():
     """``Inactivo`` filters for exactly ``status`` == "completed" (any case)."""
     client, requests = _build_projects_page(projects_rows=[])
@@ -719,11 +740,18 @@ def test_project_obligation_without_due_date_stays_undated():
 
 
 @pytest.mark.unit
-def test_user_tasks_raise_not_implemented():
-    """userTasks stays deferred and raises a clear NotImplementedError."""
+def test_user_tasks_returns_empty_list_and_logs_warning(caplog):
+    """userTasks stays deferred: returns [] and logs a warning, doesn't raise."""
     client, _ = _build()
-    with pytest.raises(NotImplementedError, match="get_user_tasks"):
-        client.get_user_tasks()
+
+    with caplog.at_level(logging.WARNING):
+        tasks = client.get_user_tasks()
+
+    assert tasks == []
+    assert any(
+        "get_user_tasks" in r.getMessage() and r.levelno == logging.WARNING
+        for r in caplog.records
+    )
 
 
 @pytest.mark.unit

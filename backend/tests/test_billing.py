@@ -333,6 +333,99 @@ def test_billing_methods_fetch_from_bc_when_no_data_passed():
 
 
 # --------------------------------------------------------------------------- #
+# Per-column resilience: cost / hours each have their own BC source
+# --------------------------------------------------------------------------- #
+
+
+class _MissingSourceBCClient(_BillingBCClient):
+    """A billing client whose cost and/or hours entity is unavailable.
+
+    Models a tenant where ``jobLedgerEntries`` / ``timeSheetPostingEntries`` are
+    not enabled: the getter raises instead of returning rows.
+    """
+
+    def __init__(self, *, fail_job_ledger=False, fail_time_sheets=False, **kwargs):
+        super().__init__(**kwargs)
+        self._fail_job_ledger = fail_job_ledger
+        self._fail_time_sheets = fail_time_sheets
+
+    def get_job_ledger_entries(self):
+        if self._fail_job_ledger:
+            raise RuntimeError("jobLedgerEntries not available on this tenant")
+        return super().get_job_ledger_entries()
+
+    def get_time_sheet_posting_entries(self):
+        if self._fail_time_sheets:
+            raise RuntimeError("timeSheetPostingEntries not available on this tenant")
+        return super().get_time_sheet_posting_entries()
+
+
+def _one_project_billing_client(**failures) -> _MissingSourceBCClient:
+    """A single billed project with both cost and hours available by default."""
+    return _MissingSourceBCClient(
+        invoice_headers=[BCSalesInvoiceHeader(document_no="INV-1", customer_id="c1")],
+        invoice_lines=[
+            BCSalesInvoiceLine(document_no="INV-1", line_amount=2000.0, project_id="p1")
+        ],
+        job_ledger=[
+            BCJobLedgerEntry(entry_no="J1", project_id="p1", total_cost_lcy=400.0)
+        ],
+        time_sheets=[
+            BCTimeSheetPostingEntry(
+                time_sheet_no="T1", project_id="p1", resource_no="r1", quantity=16.0
+            )
+        ],
+        projects=[_project("p1", "Project One", customer_id="c1")],
+        **failures,
+    )
+
+
+@pytest.mark.unit
+def test_missing_job_ledger_nulls_cost_but_keeps_billing_and_hours():
+    """An unavailable cost source reports ``cost=None``, not a misleading 0.0."""
+    bc = _one_project_billing_client(fail_job_ledger=True)
+
+    result = BillingService(None, bc).billing_by_project()
+
+    assert len(result) == 1
+    row = result[0]
+    assert row.cost is None
+    assert row.billed == 2000.0
+    assert row.hours == 16.0
+
+
+@pytest.mark.unit
+def test_missing_time_sheets_nulls_hours_but_keeps_billing_and_cost():
+    """An unavailable hours source reports ``hours=None`` and leaves cost intact."""
+    bc = _one_project_billing_client(fail_time_sheets=True)
+
+    result = BillingService(None, bc).billing_by_project()
+
+    row = result[0]
+    assert row.hours is None
+    assert row.billed == 2000.0
+    assert row.cost == 400.0
+
+
+@pytest.mark.unit
+def test_grouped_customer_rollup_propagates_unavailable_column():
+    """A customer's cost total is None when a child project's cost is unknown.
+
+    Summing the available children would report a total that is simply wrong, so
+    the unavailability propagates up to the customer row.
+    """
+    bc = _one_project_billing_client(fail_job_ledger=True)
+
+    groups = BillingService(None, bc).billing_by_customer_grouped()
+
+    assert len(groups) == 1
+    group = groups[0]
+    assert group.cost is None
+    assert group.net_billed == 2000.0
+    assert group.hours == 16.0
+
+
+# --------------------------------------------------------------------------- #
 # Endpoints (against the fixture-backed mock client)
 # --------------------------------------------------------------------------- #
 

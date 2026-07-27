@@ -16,5 +16,6 @@
   { "id": "pobl-015", "project_id": "proj-015", "obligation_id": "obl-is", "subject": true, "due_date": "2026-12-15", "submission_date": null, "status": "Pendiente" },
   { "id": "pobl-016", "project_id": "proj-016", "obligation_id": "obl-ccaa", "subject": true, "due_date": "2026-12-30", "submission_date": null, "status": "Pendiente" },
   { "id": "pobl-017", "project_id": "proj-017", "obligation_id": "obl-cass", "subject": true, "due_date": "2027-01-14", "submission_date": null, "status": "Pendiente" },
-  { "id": "pobl-018", "project_id": "proj-018", "obligation_id": "obl-informes", "subject": true, "due_date": "2027-01-29", "submission_date": null, "status": "Pendiente" }
+  { "id": "pobl-018", "project_id": "proj-018", "obligation_id": "obl-informes", "subject": true, "due_date": "2027-01-29", "submission_date": null, "status": "Pendiente" },
+  { "id": "pobl-019", "project_id": "proj-019", "obligation_id": "obl-is", "subject": true, "due_date": "2026-07-25", "submission_date": null, "fecha_notificacion": "2026-07-21", "status": "Próximo" }
 ]

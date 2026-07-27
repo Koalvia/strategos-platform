@@ -738,6 +738,145 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Billing / Costs (BC)",
+      "description": "GET-only reads of the Business Central sales-document, project-ledger, timesheet and resource entities that will back the Dashboard billing/cost charts (billing per customer, costs per project). These entities are not yet mapped on the Strategos side: run each request against the RESTSTR sandbox and capture a sample response (or run Metadata > Get $metadata) to confirm the real OData field names before they are modelled in app/integrations/business_central. Header/line relationship (per Sergio): a line's documentNo equals its header's no — salesInvoiceLines->salesInvoiceHeaders and salesCrMemoLines->salesCrMemoHeaders.",
+      "item": [
+        {
+          "name": "List Sales Invoice Headers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/salesInvoiceHeaders?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["salesInvoiceHeaders"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Sales Invoice Lines",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/salesInvoiceLines?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["salesInvoiceLines"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Sales Credit Memo Headers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/salesCrMemoHeaders?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["salesCrMemoHeaders"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Sales Credit Memo Lines",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/salesCrMemoLines?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["salesCrMemoLines"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Job Ledger Entries",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/jobLedgerEntries?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobLedgerEntries"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Time Sheet Posting Entries",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/timeSheetPostingEntries?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["timeSheetPostingEntries"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Resources",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/resources?$top=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["resources"],
+              "query": [
+                { "key": "$top", "value": "20" },
+                { "key": "$filter", "value": "", "disabled": true },
+                { "key": "$select", "value": "", "disabled": true },
+                { "key": "$expand", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }

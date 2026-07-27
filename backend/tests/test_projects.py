@@ -35,11 +35,11 @@ PROJECTS_URL = "/api/v1/projects"
 
 @pytest.mark.integration
 def test_list_returns_all_projects_on_one_page(client):
-    """The default page size (25) comfortably fits all 18 mock projects in one page."""
+    """The default page size (25) comfortably fits all 19 mock projects in one page."""
     resp = client.get(PROJECTS_URL)
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["items"]) == 18
+    assert len(body["items"]) == 19
     assert body["next_cursor"] is None
 
 
@@ -321,6 +321,7 @@ class _LiveShapedBCClient(BusinessCentralClient):
         project_type=None,
         entity_type=None,
         status=None,
+        customer_id=None,
         cursor=None,
         page_size=25,
     ):
@@ -328,6 +329,8 @@ class _LiveShapedBCClient(BusinessCentralClient):
         if search:
             needle = search.casefold()
             projects = [p for p in projects if needle in p.name.casefold()]
+        if customer_id is not None:
+            projects = [p for p in projects if p.customer_id == customer_id]
         if project_type is not None:
             wanted = project_type.casefold()
             projects = [

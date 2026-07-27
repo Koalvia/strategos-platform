@@ -12,7 +12,7 @@ stays local) with each user's active-task count derived from the fixture-backed
 
 Active-task counts are computed from the mock BC data: a local user is matched to
 their BC assignee by email, then their non-done tasks are counted. Against the
-current fixtures this yields Marc 2, Anna 3, Laura 2, Jordi 3, Núria 2, Pol 1.
+current fixtures this yields Marc 2, Anna 3, Laura 4, Jordi 3, Núria 2, Pol 1.
 """
 
 import pytest
@@ -30,7 +30,7 @@ USERS_URL = "/api/v1/users"
 EXPECTED_ACTIVE = {
     "marc@estrategos.ad": 2,
     "anna@estrategos.ad": 3,
-    "laura@estrategos.ad": 2,
+    "laura@estrategos.ad": 4,
     "jordi@estrategos.ad": 3,
     "nuria@estrategos.ad": 2,
     "pol@estrategos.ad": 1,

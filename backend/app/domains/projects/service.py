@@ -45,10 +45,11 @@ class ProjectsService:
         ``project_type`` and ``entity_type`` match their field as a
         case-insensitive exact value (the two "Todos" dropdowns in
         ``proyectos.png``); ``status`` keeps only projects in that state;
-        ``customer_id`` keeps only projects belonging to that customer (an exact
-        match on ``BCProject.customer_id``, applied here rather than pushed down
-        to the BC page — mirroring the obligations domain's ``project_id``
-        filter); ``cursor`` continues a previous page (see
+        ``customer_id`` keeps only projects belonging to that customer (an
+        exact match on ``BCProject.customer_id``, pushed down to the BC page
+        via ``get_projects_page`` so a customer's projects are found
+        regardless of how many total projects the page window would
+        otherwise cover); ``cursor`` continues a previous page (see
         ``ProjectPageResponse.next_cursor``). Filters compose (all supplied
         filters must match).
         """
@@ -57,12 +58,11 @@ class ProjectsService:
             project_type=project_type,
             entity_type=entity_type,
             status=status,
+            customer_id=customer_id,
             cursor=cursor,
             page_size=page_size,
         )
         items = page.items
-        if customer_id is not None:
-            items = [p for p in items if p.customer_id == customer_id]
         customer_ids = {p.customer_id for p in items if p.customer_id}
         names_by_id = self.bc_client.get_customer_names(list(customer_ids))
         return ProjectPageResponse(

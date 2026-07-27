@@ -12,5 +12,6 @@
   { "id": "cust-011", "name": "Ellis-Walter", "nif": "W851215", "customer_type": "Comunitat de béns", "responsible": "Brandon Macdonald", "active_project_count": 1, "status": "Activo" },
   { "id": "cust-012", "name": "Rangel-Green", "nif": "N691396", "customer_type": "Fundació", "responsible": "Pamela Meyers", "active_project_count": 1, "status": "Activo" },
   { "id": "cust-013", "name": "Atkinson Inc", "nif": "U834744", "customer_type": "Societat", "responsible": "Veronica King", "active_project_count": 1, "status": "Activo" },
-  { "id": "cust-014", "name": "Hamilton-Phillips", "nif": "I109727", "customer_type": "Indivís", "responsible": "Regina Mcintosh", "active_project_count": 1, "status": "Activo" }
+  { "id": "cust-014", "name": "Hamilton-Phillips", "nif": "I109727", "customer_type": "Indivís", "responsible": "Regina Mcintosh", "active_project_count": 1, "status": "Activo" },
+  { "id": "cust-015", "name": "OEC, SLU", "nif": "L714982", "customer_type": "Societat", "responsible": "Laura Puig", "active_project_count": 1, "status": "Activo" }
 ]

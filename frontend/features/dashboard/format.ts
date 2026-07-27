@@ -11,10 +11,17 @@ const HOURS = new Intl.NumberFormat("es-ES", {
   maximumFractionDigits: 1,
 })
 
-export function formatEuro(amount: number): string {
+// An em dash stands in for a figure Business Central could not serve, so an
+// unavailable column reads as "unknown" rather than as a real zero (and never as
+// the "NaN €" Intl would produce for a nullish input).
+export const UNAVAILABLE = "—"
+
+export function formatEuro(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined) return UNAVAILABLE
   return EUR.format(amount)
 }
 
-export function formatHours(quantity: number): string {
+export function formatHours(quantity: number | null | undefined): string {
+  if (quantity === null || quantity === undefined) return UNAVAILABLE
   return `${HOURS.format(quantity)} h`
 }
