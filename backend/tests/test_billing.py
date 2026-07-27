@@ -15,6 +15,7 @@ Financial model under test:
 from collections import Counter
 
 import pytest
+from fastapi import HTTPException
 
 from app.domains.billing.service import BillingService
 from app.integrations.business_central.models import (
@@ -341,22 +342,31 @@ class _MissingSourceBCClient(_BillingBCClient):
     """A billing client whose cost and/or hours entity is unavailable.
 
     Models a tenant where ``jobLedgerEntries`` / ``timeSheetPostingEntries`` are
-    not enabled: the getter raises instead of returning rows.
+    not enabled: the getter raises instead of returning rows. ``error`` overrides
+    what it raises, so the same fixture covers an integration outage (the default
+    ``RuntimeError``) and a deliberate HTTP outcome such as a 401.
     """
 
-    def __init__(self, *, fail_job_ledger=False, fail_time_sheets=False, **kwargs):
+    def __init__(
+        self, *, fail_job_ledger=False, fail_time_sheets=False, error=None, **kwargs
+    ):
         super().__init__(**kwargs)
         self._fail_job_ledger = fail_job_ledger
         self._fail_time_sheets = fail_time_sheets
+        self._error = error
 
     def get_job_ledger_entries(self):
         if self._fail_job_ledger:
-            raise RuntimeError("jobLedgerEntries not available on this tenant")
+            raise self._error or RuntimeError(
+                "jobLedgerEntries not available on this tenant"
+            )
         return super().get_job_ledger_entries()
 
     def get_time_sheet_posting_entries(self):
         if self._fail_time_sheets:
-            raise RuntimeError("timeSheetPostingEntries not available on this tenant")
+            raise self._error or RuntimeError(
+                "timeSheetPostingEntries not available on this tenant"
+            )
         return super().get_time_sheet_posting_entries()
 
 
@@ -423,6 +433,77 @@ def test_grouped_customer_rollup_propagates_unavailable_column():
     assert group.cost is None
     assert group.net_billed == 2000.0
     assert group.hours == 16.0
+
+
+@pytest.mark.unit
+def test_unavailable_source_raising_http_exception_is_not_degraded():
+    """A 401 from a cost source surfaces instead of reporting ``cost=None``.
+
+    An ``HTTPException`` is a deliberate HTTP outcome (here: bad Business Central
+    credentials), not the tenant lacking the entity. Masking it as a missing
+    column would hide a credential problem behind an em dash in the UI.
+    """
+    bc = _one_project_billing_client(
+        fail_job_ledger=True,
+        error=HTTPException(status_code=401, detail="Business Central auth failed"),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        BillingService(None, bc).billing_by_project()
+
+    assert exc_info.value.status_code == 401
+
+
+def _customer_without_projects_client(**failures) -> _MissingSourceBCClient:
+    """A customer billed through its invoice header but with no project lines.
+
+    The invoice line carries no ``project_id``, so the customer has net billing
+    and zero project rows — the case where a rollup has no child ``None`` to
+    propagate from.
+    """
+    return _MissingSourceBCClient(
+        invoice_headers=[BCSalesInvoiceHeader(document_no="INV-1", customer_id="c1")],
+        invoice_lines=[BCSalesInvoiceLine(document_no="INV-1", line_amount=900.0)],
+        **failures,
+    )
+
+
+@pytest.mark.unit
+def test_grouped_customer_without_projects_reports_unknown_cost_when_source_missing():
+    """A project-less customer's cost is None when its source is unavailable.
+
+    With no project rows there is no child ``None`` to propagate, so the rollup
+    has to be gated on the source's availability — otherwise the customer would
+    show a confident 0.0 while ``jobLedgerEntries`` is down.
+    """
+    bc = _customer_without_projects_client(fail_job_ledger=True)
+
+    groups = BillingService(None, bc).billing_by_customer_grouped()
+
+    assert len(groups) == 1
+    group = groups[0]
+    assert group.projects == []
+    assert group.net_billed == 900.0
+    assert group.cost is None
+    # Hours loaded fine and genuinely total nothing for this customer.
+    assert group.hours == 0.0
+
+
+@pytest.mark.unit
+def test_grouped_customer_without_projects_reports_zero_when_sources_available():
+    """A project-less customer still reports honest zeros when both sources load.
+
+    The guard above must not over-null: 0.0 is the right answer when the columns
+    were read and the customer simply has no project-attributed cost or hours.
+    """
+    bc = _customer_without_projects_client()
+
+    groups = BillingService(None, bc).billing_by_customer_grouped()
+
+    group = groups[0]
+    assert group.net_billed == 900.0
+    assert group.cost == 0.0
+    assert group.hours == 0.0
 
 
 # --------------------------------------------------------------------------- #

@@ -261,6 +261,24 @@ def test_http_exception_from_bc_is_not_masked_as_missing_data(db_session):
 
 
 @pytest.mark.integration
+def test_http_exception_from_an_optional_billing_source_is_not_masked(db_session):
+    """A 401 on the cost source surfaces instead of nulling just that column.
+
+    ``jobLedgerEntries`` feeds an *optional* column that normally degrades to
+    ``None`` when the tenant lacks the entity. An HTTP outcome is different: bad
+    credentials must reach the caller, not hide behind an em dash in the table.
+    """
+    bc = _FailingBCClient(
+        "get_job_ledger_entries",
+        error=HTTPException(status_code=401, detail="Unauthorized"),
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        DashboardService(db_session, bc).build_summary(FROZEN_TODAY)
+    assert excinfo.value.status_code == 401
+
+
+@pytest.mark.integration
 def test_summary_endpoint_returns_200_when_a_section_is_unavailable(client):
     """The endpoint degrades to a partial 200 rather than a blanket 500."""
     app.dependency_overrides[get_reference_date] = lambda: FROZEN_TODAY

@@ -100,8 +100,8 @@ def _claim_startup_run() -> bool:
 def run_bopa_pipeline_on_startup(sender=None, **kwargs):
     """Run the full BOPA scan when the first worker becomes ready.
 
-    Mirrors the manual "Iniciar Escaneo" button (and ``scripts/run_bopa_pipeline``):
-    sync the latest bulletins, analyze them against customers/projects to produce
+    Mirrors the manual "Iniciar Escaneo" button: sync the latest bulletins,
+    analyze them against customers/projects to produce
     ``BopaMatch`` rows, then generate obligation alerts. The three steps run as a
     chain of immutable signatures (``.si``-style) so they execute in order on the
     worker without passing results between them, and without blocking startup.
