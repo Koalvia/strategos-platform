@@ -13,5 +13,7 @@
   { "id": "task-012", "title": "Conciliació comptable Q2", "project_id": "proj-001", "assignee_id": "usr-jordi", "status": "En curso", "priority": "Media", "due_date": "2026-07-07" },
   { "id": "task-013", "title": "Arxivar documentació fundació", "project_id": "proj-007", "assignee_id": "usr-pol", "status": "En curso", "priority": "Baja", "due_date": "2026-07-09" },
   { "id": "task-014", "title": "Signar informe herència", "project_id": "proj-005", "assignee_id": "usr-marc", "status": "Hecho", "priority": "Alta", "due_date": "2026-06-30" },
-  { "id": "task-015", "title": "Comprovar CASS treballadors", "project_id": "proj-009", "assignee_id": "usr-anna", "status": "Hecho", "priority": "Media", "due_date": "2026-06-28" }
+  { "id": "task-015", "title": "Comprovar CASS treballadors", "project_id": "proj-009", "assignee_id": "usr-anna", "status": "Hecho", "priority": "Media", "due_date": "2026-06-28" },
+  { "id": "task-016", "title": "Revisar la notificació de sanció del Govern (OEC, SLU)", "project_id": "proj-019", "assignee_id": "usr-laura", "status": "Pendiente", "priority": "Alta", "due_date": "2026-07-23" },
+  { "id": "task-017", "title": "Preparar l'impost de societats (IS)", "project_id": "proj-019", "assignee_id": "usr-laura", "status": "Pendiente", "priority": "Media", "due_date": "2026-08-10" }
 ]

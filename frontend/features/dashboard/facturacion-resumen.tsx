@@ -21,7 +21,10 @@ const HEAD_CLASS = "text-xs font-semibold uppercase tracking-wide text-slate-500
 const NUM_CLASS = "px-6 py-3 text-right tabular-nums"
 
 interface FacturacionResumenProps {
-  groups: CustomerBillingGroup[]
+  // null when Business Central could not serve this section — rendered as an
+  // explicit "unavailable" notice, never as an empty table (which would read as
+  // "this customer has no billing").
+  groups: CustomerBillingGroup[] | null
 }
 
 // Unified billing table: each customer is an expandable parent row carrying its
@@ -50,7 +53,11 @@ export function FacturacionResumen({ groups }: FacturacionResumenProps) {
       <h2 className="border-b border-slate-100 px-6 py-5 text-lg font-bold text-slate-900">
         Facturación
       </h2>
-      {groups.length === 0 ? (
+      {groups === null ? (
+        <p className="px-6 py-12 text-center text-sm text-slate-500">
+          No se ha podido cargar la facturación desde Business Central.
+        </p>
+      ) : groups.length === 0 ? (
         <p className="px-6 py-12 text-center text-sm text-slate-500">
           Sin facturación registrada.
         </p>

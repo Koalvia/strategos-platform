@@ -48,11 +48,20 @@ class DashboardSummary(BaseModel):
     billing domain): ``facturacion`` carries the top customers by net billing,
     each with its projects (billing, usage cost, hours) nested underneath for
     the dashboard's unified accordion table.
+
+    **Every section is nullable.** ``None`` means "could not be loaded from
+    Business Central" — a distinct state from an empty list or a zero count,
+    which mean the section loaded fine and there is genuinely nothing to show.
+    The keys of the sections that failed are listed in ``unavailable_sections``
+    so the UI can name them instead of silently rendering a wrong figure. A
+    fully healthy summary has every section set and ``unavailable_sections``
+    empty.
     """
 
-    proyectos_activos: ActiveTotalKpi
-    obligaciones_proximas: CountKpi
-    tareas_pendientes: PendingTotalKpi
-    clientes_activos: ActiveTotalKpi
-    proximas_obligaciones: list[ProjectObligationResponse]
-    facturacion: list[CustomerBillingGroupResponse]
+    proyectos_activos: ActiveTotalKpi | None = None
+    obligaciones_proximas: CountKpi | None = None
+    tareas_pendientes: PendingTotalKpi | None = None
+    clientes_activos: ActiveTotalKpi | None = None
+    proximas_obligaciones: list[ProjectObligationResponse] | None = None
+    facturacion: list[CustomerBillingGroupResponse] | None = None
+    unavailable_sections: list[str] = []

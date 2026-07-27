@@ -215,12 +215,15 @@ export interface CountKpi {
 
 // Billing, usage cost and logged hours for one project. snake_case ==
 // camelCase here, so this shape is shared by the API response and the frontend.
+// `cost`/`hours` are null when their Business Central source could not be read
+// (the entity may not be enabled on the tenant) — distinct from 0, which means
+// the project genuinely has no cost / no logged hours.
 export interface ProjectBilling {
   project_id: string
   project_name: string
   billed: number
-  cost: number
-  hours: number
+  cost: number | null
+  hours: number | null
 }
 
 // One customer with its per-project billing nested underneath — the row shape
@@ -231,31 +234,39 @@ export interface CustomerBillingGroup {
   customer_id: string
   customer_name: string
   net_billed: number
-  cost: number
-  hours: number
+  cost: number | null
+  hours: number | null
   projects: ProjectBilling[]
 }
 
 // Backend API response type (from GET /api/v1/dashboard/summary). The two lists
 // reuse the obligations / tasks response shapes; the financial section reuses
 // the billing domain's shapes.
+//
+// Every section is nullable: null means "could not be loaded from Business
+// Central", a distinct state from an empty list or a zero count (which mean the
+// section loaded fine and there is genuinely nothing to show). The keys of the
+// sections that failed arrive in `unavailable_sections` so the UI can name them
+// instead of rendering a figure that isn't true.
 export interface DashboardSummaryResponse {
-  proyectos_activos: ActiveTotalKpi
-  obligaciones_proximas: CountKpi
-  tareas_pendientes: PendingTotalKpi
-  clientes_activos: ActiveTotalKpi
-  proximas_obligaciones: ProjectObligationResponse[]
-  facturacion: CustomerBillingGroup[]
+  proyectos_activos: ActiveTotalKpi | null
+  obligaciones_proximas: CountKpi | null
+  tareas_pendientes: PendingTotalKpi | null
+  clientes_activos: ActiveTotalKpi | null
+  proximas_obligaciones: ProjectObligationResponse[] | null
+  facturacion: CustomerBillingGroup[] | null
+  unavailable_sections: string[]
 }
 
 // Frontend type (camelCase for easier use in components)
 export interface DashboardSummary {
-  proyectosActivos: ActiveTotalKpi
-  obligacionesProximas: CountKpi
-  tareasPendientes: PendingTotalKpi
-  clientesActivos: ActiveTotalKpi
-  proximasObligaciones: ProjectObligation[]
-  facturacion: CustomerBillingGroup[]
+  proyectosActivos: ActiveTotalKpi | null
+  obligacionesProximas: CountKpi | null
+  tareasPendientes: PendingTotalKpi | null
+  clientesActivos: ActiveTotalKpi | null
+  proximasObligaciones: ProjectObligation[] | null
+  facturacion: CustomerBillingGroup[] | null
+  unavailableSections: string[]
 }
 
 export interface AuthResponse {
@@ -357,17 +368,22 @@ export function transformTaskResponse(backendTask: TaskResponse): Task {
   }
 }
 
+// Any section may arrive as null when Business Central could not serve it, so
+// every field is passed through defensively — mapping an absent list would throw
+// here and turn a usable partial summary into a blanket failure.
 export function transformDashboardSummaryResponse(
   backendSummary: DashboardSummaryResponse,
 ): DashboardSummary {
   return {
-    proyectosActivos: backendSummary.proyectos_activos,
-    obligacionesProximas: backendSummary.obligaciones_proximas,
-    tareasPendientes: backendSummary.tareas_pendientes,
-    clientesActivos: backendSummary.clientes_activos,
-    proximasObligaciones: backendSummary.proximas_obligaciones.map(
-      transformProjectObligationResponse,
-    ),
-    facturacion: backendSummary.facturacion,
+    proyectosActivos: backendSummary.proyectos_activos ?? null,
+    obligacionesProximas: backendSummary.obligaciones_proximas ?? null,
+    tareasPendientes: backendSummary.tareas_pendientes ?? null,
+    clientesActivos: backendSummary.clientes_activos ?? null,
+    proximasObligaciones:
+      backendSummary.proximas_obligaciones?.map(
+        transformProjectObligationResponse,
+      ) ?? null,
+    facturacion: backendSummary.facturacion ?? null,
+    unavailableSections: backendSummary.unavailable_sections ?? [],
   }
 }

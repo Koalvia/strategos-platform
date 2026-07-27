@@ -85,10 +85,18 @@ class BusinessCentralClient(ABC):
         project_type: str | None = None,
         entity_type: str | None = None,
         status: ProjectStatus | None = None,
+        customer_id: str | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
     ) -> BCProjectPage:
         """Return one page of projects, optionally filtered.
+
+        ``customer_id`` is pushed down as part of the query (not applied after
+        the fact), so a customer's projects are found regardless of how many
+        total projects the page window would otherwise cover. Known
+        limitation: if a single customer had more projects than ``page_size``,
+        only the first page would come back — there is no cursor support yet
+        for combining a customer filter with pagination across pages.
 
         ``cursor`` is an opaque continuation token taken from a previous
         page's ``next_cursor``; when given, every other filter/``page_size``
@@ -116,7 +124,12 @@ class BusinessCentralClient(ABC):
 
     @abstractmethod
     def get_user_tasks(self) -> list[BCUserTask]:
-        """Return all user tasks (BC ``GET /userTasks``)."""
+        """Return all user tasks (BC ``GET /userTasks``).
+
+        The live implementation currently returns ``[]`` (userTasks is
+        excluded pending a decision on its BC source) rather than fetching
+        real data — callers must treat an empty result as valid, not an error.
+        """
         raise NotImplementedError
 
     @abstractmethod

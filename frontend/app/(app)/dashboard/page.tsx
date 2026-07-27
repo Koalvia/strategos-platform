@@ -1,14 +1,34 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Loader2 } from "lucide-react"
+import { Loader2, TriangleAlert } from "lucide-react"
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { authApi } from "@/features/auth/api"
 import { dashboardApi } from "@/features/dashboard/api"
 import { FacturacionResumen } from "@/features/dashboard/facturacion-resumen"
+import { UNAVAILABLE } from "@/features/dashboard/format"
 import { KpiTile } from "@/features/dashboard/kpi-tile"
 import { ProximasObligaciones } from "@/features/dashboard/proximas-obligaciones"
 import type { DashboardSummary } from "@/lib/types"
+
+// Spanish labels for the backend's section keys (which are English, per the
+// repo's code-language policy). Anything unmapped falls back to the raw key so a
+// newly added section still names itself rather than disappearing.
+const SECTION_LABELS: Record<string, string> = {
+  customers: "Clientes",
+  projects: "Proyectos",
+  tasks: "Tareas",
+  obligations: "Obligaciones",
+  billing: "Facturación",
+}
+
+function sectionLabel(key: string): string {
+  return SECTION_LABELS[key] ?? key
+}
+
+// Sublabel for a KPI tile whose figure could not be loaded.
+const KPI_UNAVAILABLE = "No disponible"
 
 // Time-of-day greeting, matching the "Buenos días" copy in dashboard.png.
 function getGreeting(hour: number): string {
@@ -29,6 +49,9 @@ function formatToday(date: Date): string {
 export default function DashboardPage() {
   const [name, setName] = useState<string | null>(null)
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
+  // Why the summary is missing, when it is. Kept separate from `summary` so a
+  // failed load is distinguishable from a summary that legitimately has no data.
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [now] = useState(() => new Date())
 
@@ -44,12 +67,21 @@ export default function DashboardPage() {
         ])
         if (!active) return
         setName(userResult.success ? (userResult.user?.name ?? null) : null)
-        setSummary(
-          summaryResult.success && summaryResult.data ? summaryResult.data : null,
-        )
+        if (summaryResult.success && summaryResult.data) {
+          setSummary(summaryResult.data)
+          setError(null)
+        } else {
+          setSummary(null)
+          // Surface the backend's own message instead of discarding it — it is
+          // what makes a real failure diagnosable from the UI.
+          setError(summaryResult.message ?? "No se ha podido cargar el resumen.")
+        }
       } catch (error) {
         console.error("[Strategos] Load dashboard error:", error)
-        if (active) setSummary(null)
+        if (active) {
+          setSummary(null)
+          setError("No se ha podido conectar con el servidor.")
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -82,34 +114,65 @@ export default function DashboardPage() {
           <Loader2 className="size-8 animate-spin text-[#caa53d]" />
         </div>
       ) : !summary ? (
-        <div className="mt-8 flex min-h-60 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white">
+        <div className="mt-8 flex min-h-60 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-6 text-center">
           <p className="text-sm text-slate-500">
             No se ha podido cargar el resumen.
           </p>
+          {error && <p className="text-xs text-slate-400">{error}</p>}
         </div>
       ) : (
         <>
+          {/* Some sections load while others don't (Business Central endpoints
+              fail independently). Name what is missing, so a "—" is never
+              mistaken for a real figure. */}
+          {summary.unavailableSections.length > 0 && (
+            <Alert className="mt-6 border-amber-200 bg-amber-50 text-amber-900">
+              <TriangleAlert />
+              <AlertTitle>Información incompleta</AlertTitle>
+              <AlertDescription className="text-amber-800">
+                No se ha podido cargar desde Business Central:{" "}
+                {summary.unavailableSections.map(sectionLabel).join(", ")}.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
             <KpiTile
               title="Proyectos activos"
-              value={summary.proyectosActivos.active}
-              sublabel={`de ${summary.proyectosActivos.total} totales`}
+              value={summary.proyectosActivos?.active ?? UNAVAILABLE}
+              sublabel={
+                summary.proyectosActivos
+                  ? `de ${summary.proyectosActivos.total} totales`
+                  : KPI_UNAVAILABLE
+              }
             />
             <KpiTile
               title="Obligaciones próximas"
-              value={summary.obligacionesProximas.count}
-              sublabel="en los próximos 7 días"
+              value={summary.obligacionesProximas?.count ?? UNAVAILABLE}
+              sublabel={
+                summary.obligacionesProximas
+                  ? "en los próximos 7 días"
+                  : KPI_UNAVAILABLE
+              }
               accent
             />
             <KpiTile
               title="Tareas pendientes"
-              value={summary.tareasPendientes.pending}
-              sublabel={`${summary.tareasPendientes.total} totales`}
+              value={summary.tareasPendientes?.pending ?? UNAVAILABLE}
+              sublabel={
+                summary.tareasPendientes
+                  ? `${summary.tareasPendientes.total} totales`
+                  : KPI_UNAVAILABLE
+              }
             />
             <KpiTile
               title="Clientes activos"
-              value={summary.clientesActivos.active}
-              sublabel={`de ${summary.clientesActivos.total} totales`}
+              value={summary.clientesActivos?.active ?? UNAVAILABLE}
+              sublabel={
+                summary.clientesActivos
+                  ? `de ${summary.clientesActivos.total} totales`
+                  : KPI_UNAVAILABLE
+              }
             />
           </div>
 

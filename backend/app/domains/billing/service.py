@@ -16,13 +16,18 @@ per-project billing/cost/hours group on the line/entry ``project_id`` (BC
 ``jobNo``).
 """
 
+from collections.abc import Callable
+
 from sqlalchemy.orm import Session
 
+from app import logger
 from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import (
+    BCJobLedgerEntry,
     BCProject,
     BCSalesCrMemoLine,
     BCSalesInvoiceLine,
+    BCTimeSheetPostingEntry,
 )
 
 from .schemas import (
@@ -39,6 +44,22 @@ from .schemas import (
 # ``Decimal`` from the integration layer up (DTO fields, this aggregation, and the
 # API schemas) to avoid floating-point drift.
 _MONEY_DECIMALS = 2
+
+
+def _rollup(
+    projects: list[ProjectBillingResponse],
+    value: Callable[[ProjectBillingResponse], float | None],
+) -> float | None:
+    """Sum a per-project column up to its customer, propagating unavailability.
+
+    A ``None`` on any child means the column's Business Central source could not
+    be read (see :meth:`BillingService._optional_totals`), so the customer total
+    is unknown too — summing it as 0.0 would report a total that is simply wrong.
+    """
+    values = [value(p) for p in projects]
+    if any(v is None for v in values):
+        return None
+    return round(sum(v for v in values if v is not None), _MONEY_DECIMALS)
 
 
 class BillingService:
@@ -144,34 +165,75 @@ class BillingService:
                     billed.get(line.project_id, 0.0) - line.line_amount
                 )
 
-        cost: dict[str, float] = {}
-        for entry in self.bc_client.get_job_ledger_entries():
-            if entry.project_id:
-                cost[entry.project_id] = (
-                    cost.get(entry.project_id, 0.0) + entry.total_cost_lcy
-                )
+        # Cost and hours each come from their own BC entity, which may not be
+        # enabled on the tenant. When one is unavailable its column degrades to
+        # ``None`` (see ``_optional_totals``) rather than to 0.0, which would be
+        # indistinguishable from a project that genuinely has no cost/hours.
+        cost = self._optional_totals(
+            "jobLedgerEntries",
+            self.bc_client.get_job_ledger_entries,
+            lambda entry: entry.total_cost_lcy,
+        )
+        hours = self._optional_totals(
+            "timeSheetPostingEntries",
+            self.bc_client.get_time_sheet_posting_entries,
+            lambda entry: entry.quantity,
+        )
 
-        hours: dict[str, float] = {}
-        for entry in self.bc_client.get_time_sheet_posting_entries():
-            if entry.project_id:
-                hours[entry.project_id] = (
-                    hours.get(entry.project_id, 0.0) + entry.quantity
-                )
-
-        project_ids = set(billed) | set(cost) | set(hours)
+        project_ids = set(billed) | set(cost or {}) | set(hours or {})
         names = {p.id: p.name for p in projects}
         results = [
             ProjectBillingResponse(
                 project_id=project_id,
                 project_name=names.get(project_id, project_id),
                 billed=round(billed.get(project_id, 0.0), _MONEY_DECIMALS),
-                cost=round(cost.get(project_id, 0.0), _MONEY_DECIMALS),
-                hours=round(hours.get(project_id, 0.0), _MONEY_DECIMALS),
+                cost=(
+                    None
+                    if cost is None
+                    else round(cost.get(project_id, 0.0), _MONEY_DECIMALS)
+                ),
+                hours=(
+                    None
+                    if hours is None
+                    else round(hours.get(project_id, 0.0), _MONEY_DECIMALS)
+                ),
             )
             for project_id in project_ids
         ]
         results.sort(key=lambda r: r.billed, reverse=True)
         return results
+
+    def _optional_totals(
+        self,
+        entity: str,
+        fetch: Callable[[], list[BCJobLedgerEntry] | list[BCTimeSheetPostingEntry]],
+        amount: Callable[[BCJobLedgerEntry | BCTimeSheetPostingEntry], float],
+    ) -> dict[str, float] | None:
+        """Total ``amount`` per project id, or ``None`` if ``entity`` is unavailable.
+
+        The cost and hours columns each depend on their own Business Central
+        entity. Those may be absent or disabled on a given tenant, so a failure
+        to read one degrades just that column instead of failing the whole
+        billing aggregation. ``None`` (rather than an empty dict) is returned so
+        callers can tell "this column could not be loaded" apart from "every
+        project genuinely totals zero".
+        """
+        try:
+            entries = fetch()
+        except Exception:
+            logger.exception(
+                "Billing source %s unavailable; its column will report as missing",
+                entity,
+            )
+            return None
+
+        totals: dict[str, float] = {}
+        for entry in entries:
+            if entry.project_id:
+                totals[entry.project_id] = (
+                    totals.get(entry.project_id, 0.0) + amount(entry)
+                )
+        return totals
 
     def billing_by_customer_grouped(
         self,
@@ -247,13 +309,11 @@ class BillingService:
                 net_billed=round(
                     net_by_customer.get(customer_id, 0.0), _MONEY_DECIMALS
                 ),
-                cost=round(
-                    sum(p.cost for p in projects_by_customer.get(customer_id, [])),
-                    _MONEY_DECIMALS,
+                cost=_rollup(
+                    projects_by_customer.get(customer_id, []), lambda p: p.cost
                 ),
-                hours=round(
-                    sum(p.hours for p in projects_by_customer.get(customer_id, [])),
-                    _MONEY_DECIMALS,
+                hours=_rollup(
+                    projects_by_customer.get(customer_id, []), lambda p: p.hours
                 ),
                 projects=projects_by_customer.get(customer_id, []),
             )

@@ -19,11 +19,11 @@ CUSTOMERS_URL = "/api/v1/customers"
 
 @pytest.mark.integration
 def test_list_returns_all_customers_on_one_page(client):
-    """The default page size (25) comfortably fits all 14 mock customers in one page."""
+    """The default page size (25) comfortably fits all 15 mock customers in one page."""
     resp = client.get(CUSTOMERS_URL)
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["items"]) == 14
+    assert len(body["items"]) == 15
     assert body["next_cursor"] is None
 
 
@@ -117,11 +117,11 @@ def test_status_filter_isolates_the_inactive_customer(client):
 
 @pytest.mark.integration
 def test_status_filter_active_returns_active_customers(client):
-    """?status=Activo returns the 13 active customers (only cust-008 is inactive)."""
+    """?status=Activo returns the 14 active customers (only cust-008 is inactive)."""
     resp = client.get(CUSTOMERS_URL, params={"status": "Activo"})
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["items"]) == 13
+    assert len(body["items"]) == 14
     assert all(c["status"] == "Activo" for c in body["items"])
 
 
@@ -147,7 +147,7 @@ def test_last_page_has_no_next_cursor(client):
     second = client.get(
         CUSTOMERS_URL, params={"page_size": 10, "cursor": first["next_cursor"]}
     ).json()
-    assert len(second["items"]) == 4  # 14 total - 10 on the first page
+    assert len(second["items"]) == 5  # 15 total - 10 on the first page
     assert second["next_cursor"] is None
 
 

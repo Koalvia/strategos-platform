@@ -30,13 +30,17 @@ class ProjectBillingResponse(BaseModel):
     ``billed`` is net billing (invoices minus credit memos) on lines tagged with
     this project; ``cost`` is the sum of ``jobLedgerEntries`` *usage* cost;
     ``hours`` is the sum of ``timeSheetPostingEntries`` quantity.
+
+    ``cost``/``hours`` are ``None`` when their Business Central source could not
+    be read (the entity may not be enabled on the tenant) — distinct from
+    ``0.0``, which means the project genuinely has no cost / no logged hours.
     """
 
     project_id: str
     project_name: str
     billed: float
-    cost: float
-    hours: float
+    cost: float | None = None
+    hours: float | None = None
 
 
 class CustomerBillingGroupResponse(BaseModel):
@@ -53,11 +57,14 @@ class CustomerBillingGroupResponse(BaseModel):
     tagged to one of the customer's projects. ``net_billed`` therefore need not
     equal the sum of the children's ``billed`` — non-project invoice lines count
     toward the customer total but sit under no project.
+
+    ``cost``/``hours`` are ``None`` when the underlying source was unavailable
+    for any of the customer's projects, since a partial sum would be misleading.
     """
 
     customer_id: str
     customer_name: str
     net_billed: float
-    cost: float
-    hours: float
+    cost: float | None = None
+    hours: float | None = None
     projects: list[ProjectBillingResponse]

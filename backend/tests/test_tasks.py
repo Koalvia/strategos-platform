@@ -58,10 +58,10 @@ def bc_user_client(db_session):
 
 @pytest.mark.integration
 def test_list_returns_all_tasks(client):
-    """The list returns every mock task (15)."""
+    """The list returns every mock task (17)."""
     resp = client.get(TASKS_URL)
     assert resp.status_code == 200
-    assert len(resp.json()) == 15
+    assert len(resp.json()) == 17
 
 
 @pytest.mark.integration
