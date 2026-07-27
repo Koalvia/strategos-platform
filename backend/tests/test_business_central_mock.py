@@ -375,44 +375,6 @@ def test_billing_getters_return_isolated_copies(client):
 
 
 @pytest.mark.unit
-def test_billing_getters_load_and_type_fixtures(client):
-    """The seven billing/cost getters load their fixtures into the right DTOs."""
-    invoice_headers = client.get_sales_invoice_headers()
-    invoice_lines = client.get_sales_invoice_lines()
-    cr_memo_headers = client.get_sales_cr_memo_headers()
-    cr_memo_lines = client.get_sales_cr_memo_lines()
-    job_ledger = client.get_job_ledger_entries()
-    time_sheets = client.get_time_sheet_posting_entries()
-    resources = client.get_resources()
-
-    assert all(isinstance(h, BCSalesInvoiceHeader) for h in invoice_headers)
-    assert all(isinstance(line, BCSalesInvoiceLine) for line in invoice_lines)
-    assert all(isinstance(h, BCSalesCrMemoHeader) for h in cr_memo_headers)
-    assert all(isinstance(line, BCSalesCrMemoLine) for line in cr_memo_lines)
-    assert all(isinstance(e, BCJobLedgerEntry) for e in job_ledger)
-    assert all(isinstance(e, BCTimeSheetPostingEntry) for e in time_sheets)
-    assert all(isinstance(r, BCResource) for r in resources)
-
-    # The job-ledger fixture is pre-filtered to usage entries (the cost side).
-    assert job_ledger and all(e.entry_type == "Usage" for e in job_ledger)
-
-    # A line ties back to its header on document_no, and a non-project line
-    # (blank jobNo) is represented as project_id None.
-    header_nos = {h.document_no for h in invoice_headers}
-    assert all(line.document_no in header_nos for line in invoice_lines)
-    assert any(line.project_id is None for line in invoice_lines)
-
-
-@pytest.mark.unit
-def test_billing_getters_return_isolated_copies(client):
-    """Mutating a returned billing list does not corrupt shared fixture state."""
-    first = client.get_sales_invoice_lines()
-    count = len(first)
-    first.clear()
-    assert len(client.get_sales_invoice_lines()) == count
-
-
-@pytest.mark.unit
 def test_di_provider_returns_mock_in_mock_mode():
     """The DI provider returns the mock client when mode is 'mock'."""
     assert settings.BUSINESS_CENTRAL_MODE == "mock"

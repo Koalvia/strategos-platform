@@ -804,10 +804,20 @@ def _build_billing(**rows_by_entity):
 
 @pytest.mark.unit
 def test_sales_invoice_header_and_line_mapping():
-    """Headers map no/customer/postingDate; lines map amount/jobNo/type/number."""
+    """Headers map no/customer/postingDate; lines map amount/jobNo/type/number.
+
+    The customer comes from ``billToCustomerNo`` — the same field projects are
+    attributed by — so ``sellToCustomerNo`` is present here and deliberately
+    ignored.
+    """
     client, _ = _build_billing(
         salesInvoiceHeaders=[
-            {"no": "INV-1", "sellToCustomerNumber": "C1", "postingDate": "2026-01-15"}
+            {
+                "no": "INV-1",
+                "billToCustomerNo": "C1",
+                "sellToCustomerNo": "C9",
+                "postingDate": "2026-01-15",
+            }
         ],
         salesInvoiceLines=[
             {
@@ -841,7 +851,12 @@ def test_sales_cr_memo_mapping():
     """Credit-memo headers and lines map like invoices (amount subtracts later)."""
     client, _ = _build_billing(
         salesCrMemoHeaders=[
-            {"no": "CM-1", "sellToCustomerNumber": "C1", "postingDate": "2026-02-20"}
+            {
+                "no": "CM-1",
+                "billToCustomerNo": "C1",
+                "sellToCustomerNo": "C9",
+                "postingDate": "2026-02-20",
+            }
         ],
         salesCrMemoLines=[{"documentNo": "CM-1", "lineAmount": 200.0, "jobNo": "P1"}],
     )
@@ -919,13 +934,17 @@ def test_job_ledger_entries_with_rows_logs_no_warning(caplog):
 
 @pytest.mark.unit
 def test_time_sheet_and_resource_mapping():
-    """Time-sheet entries and resources map their quantity/cost/price fields."""
+    """Time-sheet entries and resources map their quantity/cost/price fields.
+
+    ``timeSheetPostingEntries`` carries no ``jobNo``: the project number arrives
+    in ``documentNo``. It exposes no resource field either, so ``resource_no``
+    stays unset.
+    """
     client, _ = _build_billing(
         timeSheetPostingEntries=[
             {
                 "timeSheetNo": "TS-1",
-                "jobNo": "P1",
-                "resourceNo": "RES-01",
+                "documentNo": "P1",
                 "quantity": 8.0,
                 "postingDate": "2026-01-20",
             }
@@ -937,7 +956,7 @@ def test_time_sheet_and_resource_mapping():
     assert (ts.time_sheet_no, ts.project_id, ts.resource_no, ts.quantity) == (
         "TS-1",
         "P1",
-        "RES-01",
+        "",
         8.0,
     )
 
