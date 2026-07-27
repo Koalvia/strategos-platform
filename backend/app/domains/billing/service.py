@@ -16,13 +16,19 @@ per-project billing/cost/hours group on the line/entry ``project_id`` (BC
 ``jobNo``).
 """
 
+from collections.abc import Callable
+
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app import logger
 from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import (
+    BCJobLedgerEntry,
     BCProject,
     BCSalesCrMemoLine,
     BCSalesInvoiceLine,
+    BCTimeSheetPostingEntry,
 )
 
 from .schemas import (
@@ -39,6 +45,28 @@ from .schemas import (
 # ``Decimal`` from the integration layer up (DTO fields, this aggregation, and the
 # API schemas) to avoid floating-point drift.
 _MONEY_DECIMALS = 2
+
+
+def _rollup(
+    projects: list[ProjectBillingResponse],
+    value: Callable[[ProjectBillingResponse], float | None],
+) -> float | None:
+    """Sum a per-project column up to its customer, propagating unavailability.
+
+    A ``None`` on any child means the column's Business Central source could not
+    be read (see :meth:`BillingService._optional_totals`), so the customer total
+    is unknown too — summing it as 0.0 would report a total that is simply wrong.
+
+    This only covers customers that *have* project rows. A customer with none
+    (billing attributed through its invoice headers but no project-attributed
+    lines) has no child to propagate from, so the caller must not call this at
+    all when the column's source is unavailable — see the ``*_available`` gates
+    in :meth:`BillingService.billing_by_customer_grouped`.
+    """
+    values = [value(p) for p in projects]
+    if any(v is None for v in values):
+        return None
+    return round(sum(v for v in values if v is not None), _MONEY_DECIMALS)
 
 
 class BillingService:
@@ -132,6 +160,22 @@ class BillingService:
         if projects is None:
             projects = self.bc_client.get_projects()
 
+        rows, _, _ = self._project_rows(invoice_lines, cr_memo_lines, projects)
+        return rows
+
+    def _project_rows(
+        self,
+        invoice_lines: list[BCSalesInvoiceLine],
+        cr_memo_lines: list[BCSalesCrMemoLine],
+        projects: list[BCProject],
+    ) -> tuple[list[ProjectBillingResponse], bool, bool]:
+        """Build the per-project rows, reporting which optional sources loaded.
+
+        Backs :meth:`billing_by_project` (which needs only the rows) and
+        :meth:`billing_by_customer_grouped`, which needs the two availability
+        flags as well: a customer with no project rows has no child ``None`` to
+        propagate, so it cannot infer a column's unavailability from the rows.
+        """
         billed: dict[str, float] = {}
         for line in invoice_lines:
             if line.project_id:
@@ -144,34 +188,82 @@ class BillingService:
                     billed.get(line.project_id, 0.0) - line.line_amount
                 )
 
-        cost: dict[str, float] = {}
-        for entry in self.bc_client.get_job_ledger_entries():
-            if entry.project_id:
-                cost[entry.project_id] = (
-                    cost.get(entry.project_id, 0.0) + entry.total_cost_lcy
-                )
+        # Cost and hours each come from their own BC entity, which may not be
+        # enabled on the tenant. When one is unavailable its column degrades to
+        # ``None`` (see ``_optional_totals``) rather than to 0.0, which would be
+        # indistinguishable from a project that genuinely has no cost/hours.
+        cost = self._optional_totals(
+            "jobLedgerEntries",
+            self.bc_client.get_job_ledger_entries,
+            lambda entry: entry.total_cost_lcy,
+        )
+        hours = self._optional_totals(
+            "timeSheetPostingEntries",
+            self.bc_client.get_time_sheet_posting_entries,
+            lambda entry: entry.quantity,
+        )
 
-        hours: dict[str, float] = {}
-        for entry in self.bc_client.get_time_sheet_posting_entries():
-            if entry.project_id:
-                hours[entry.project_id] = (
-                    hours.get(entry.project_id, 0.0) + entry.quantity
-                )
-
-        project_ids = set(billed) | set(cost) | set(hours)
+        project_ids = set(billed) | set(cost or {}) | set(hours or {})
         names = {p.id: p.name for p in projects}
         results = [
             ProjectBillingResponse(
                 project_id=project_id,
                 project_name=names.get(project_id, project_id),
                 billed=round(billed.get(project_id, 0.0), _MONEY_DECIMALS),
-                cost=round(cost.get(project_id, 0.0), _MONEY_DECIMALS),
-                hours=round(hours.get(project_id, 0.0), _MONEY_DECIMALS),
+                cost=(
+                    None
+                    if cost is None
+                    else round(cost.get(project_id, 0.0), _MONEY_DECIMALS)
+                ),
+                hours=(
+                    None
+                    if hours is None
+                    else round(hours.get(project_id, 0.0), _MONEY_DECIMALS)
+                ),
             )
             for project_id in project_ids
         ]
         results.sort(key=lambda r: r.billed, reverse=True)
-        return results
+        return results, cost is not None, hours is not None
+
+    def _optional_totals(
+        self,
+        entity: str,
+        fetch: Callable[[], list[BCJobLedgerEntry] | list[BCTimeSheetPostingEntry]],
+        amount: Callable[[BCJobLedgerEntry | BCTimeSheetPostingEntry], float],
+    ) -> dict[str, float] | None:
+        """Total ``amount`` per project id, or ``None`` if ``entity`` is unavailable.
+
+        The cost and hours columns each depend on their own Business Central
+        entity. Those may be absent or disabled on a given tenant, so a failure
+        to read one degrades just that column instead of failing the whole
+        billing aggregation. ``None`` (rather than an empty dict) is returned so
+        callers can tell "this column could not be loaded" apart from "every
+        project genuinely totals zero".
+
+        ``HTTPException`` is re-raised rather than degraded: it is a deliberate
+        HTTP outcome (e.g. a 404 or an auth failure), not an integration outage,
+        and must not be masked as a missing column. This mirrors
+        ``DashboardService._section``, which wraps this call from the outside.
+        """
+        try:
+            entries = fetch()
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception(
+                "Billing source %s unavailable; its column will report as missing",
+                entity,
+            )
+            return None
+
+        totals: dict[str, float] = {}
+        for entry in entries:
+            if entry.project_id:
+                totals[entry.project_id] = (
+                    totals.get(entry.project_id, 0.0) + amount(entry)
+                )
+        return totals
 
     def billing_by_customer_grouped(
         self,
@@ -186,8 +278,11 @@ class BillingService:
         hierarchical result for the dashboard's unified accordion table: the
         customer is the parent (authoritative net billing) and its projects the
         children (billing, usage cost, hours). Each customer's ``cost``/``hours``
-        are the sum over its own projects. Customers are ordered by net billing
-        desc and, within each, projects keep the billing-desc order
+        are the sum over its own projects, or ``None`` when that column's
+        Business Central source could not be read — including for a customer with
+        no project rows at all, which is why the availability flags come straight
+        from :meth:`_project_rows`. Customers are ordered by net billing desc
+        and, within each, projects keep the billing-desc order
         :meth:`billing_by_project` already applies.
 
         A customer appears if it has net billing **or** at least one project with
@@ -210,10 +305,11 @@ class BillingService:
         by_customer = self.billing_by_customer(
             invoice_lines=invoice_lines, cr_memo_lines=cr_memo_lines
         )
-        by_project = self.billing_by_project(
-            invoice_lines=invoice_lines,
-            cr_memo_lines=cr_memo_lines,
-            projects=projects,
+        # ``_project_rows`` rather than ``billing_by_project`` because the
+        # customer rollups need to know whether the cost/hours sources loaded,
+        # not just whether any project row happened to carry a ``None``.
+        by_project, cost_available, hours_available = self._project_rows(
+            invoice_lines, cr_memo_lines, projects
         )
 
         net_by_customer = {c.customer_id: c.net_billed for c in by_customer}
@@ -247,13 +343,19 @@ class BillingService:
                 net_billed=round(
                     net_by_customer.get(customer_id, 0.0), _MONEY_DECIMALS
                 ),
-                cost=round(
-                    sum(p.cost for p in projects_by_customer.get(customer_id, [])),
-                    _MONEY_DECIMALS,
+                cost=(
+                    _rollup(
+                        projects_by_customer.get(customer_id, []), lambda p: p.cost
+                    )
+                    if cost_available
+                    else None
                 ),
-                hours=round(
-                    sum(p.hours for p in projects_by_customer.get(customer_id, [])),
-                    _MONEY_DECIMALS,
+                hours=(
+                    _rollup(
+                        projects_by_customer.get(customer_id, []), lambda p: p.hours
+                    )
+                    if hours_available
+                    else None
                 ),
                 projects=projects_by_customer.get(customer_id, []),
             )

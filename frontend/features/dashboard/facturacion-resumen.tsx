@@ -21,7 +21,10 @@ const HEAD_CLASS = "text-xs font-semibold uppercase tracking-wide text-slate-500
 const NUM_CLASS = "px-6 py-3 text-right tabular-nums"
 
 interface FacturacionResumenProps {
-  groups: CustomerBillingGroup[]
+  // null when Business Central could not serve this section — rendered as an
+  // explicit "unavailable" notice, never as an empty table (which would read as
+  // "this customer has no billing").
+  groups: CustomerBillingGroup[] | null
 }
 
 // Unified billing table: each customer is an expandable parent row carrying its
@@ -50,7 +53,11 @@ export function FacturacionResumen({ groups }: FacturacionResumenProps) {
       <h2 className="border-b border-slate-100 px-6 py-5 text-lg font-bold text-slate-900">
         Facturación
       </h2>
-      {groups.length === 0 ? (
+      {groups === null ? (
+        <p className="px-6 py-12 text-center text-sm text-slate-500">
+          No se ha podido cargar la facturación desde Business Central.
+        </p>
+      ) : groups.length === 0 ? (
         <p className="px-6 py-12 text-center text-sm text-slate-500">
           Sin facturación registrada.
         </p>
@@ -108,27 +115,36 @@ function FacturacionGroup({
 }: FacturacionGroupProps) {
   return (
     <>
-      <TableRow
-        className={cn(
-          "border-slate-100",
-          hasProjects && "cursor-pointer",
-        )}
-        aria-expanded={hasProjects ? isOpen : undefined}
-        onClick={hasProjects ? onToggle : undefined}
-      >
+      <TableRow className="border-slate-100">
         <TableCell className="px-6 py-4 font-medium text-slate-900">
-          <div className="flex items-center gap-2">
-            <ChevronRight
-              className={cn(
-                "size-4 shrink-0 text-slate-400 transition-transform",
-                hasProjects ? "opacity-100" : "opacity-0",
-                isOpen && "rotate-90",
-              )}
-            />
-            <span className="max-w-xs truncate" title={group.customer_name}>
-              {group.customer_name}
-            </span>
-          </div>
+          {/* The disclosure control is a real <button> (aria-expanded lives on
+              it, not on the <tr>, whose implicit row role does not support it).
+              Customers with no projects render a plain, non-interactive label. */}
+          {hasProjects ? (
+            <button
+              type="button"
+              aria-expanded={isOpen}
+              onClick={onToggle}
+              className="flex w-full items-center gap-2 text-left rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#caa53d]"
+            >
+              <ChevronRight
+                className={cn(
+                  "size-4 shrink-0 text-slate-400 transition-transform",
+                  isOpen && "rotate-90",
+                )}
+              />
+              <span className="max-w-xs truncate" title={group.customer_name}>
+                {group.customer_name}
+              </span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="size-4 shrink-0" aria-hidden />
+              <span className="max-w-xs truncate" title={group.customer_name}>
+                {group.customer_name}
+              </span>
+            </div>
+          )}
         </TableCell>
         <TableCell className={cn(NUM_CLASS, "py-4 font-medium text-slate-900")}>
           {formatEuro(group.net_billed)}

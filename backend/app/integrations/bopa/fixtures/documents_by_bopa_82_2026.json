@@ -1,0 +1,86 @@
+{
+  "totalCount": 209,
+  "paginatedDocuments": [
+    {
+      "score": 1.0,
+      "highlights": null,
+      "document": {
+        "metadata_storage_name": "GF_2026_07_16_11_16_54.html",
+        "metadata_storage_size": 1873,
+        "metadata_storage_path": "https://bopadocuments.blob.core.windows.net/bopa-documents/038082/html/GF_2026_07_16_11_16_54.html",
+        "organisme": "Notificacions",
+        "organismePare": "03. Govern",
+        "tema": "Govern",
+        "temaPare": "15. Notificacions",
+        "fileType": "html",
+        "dataPublicacioButlleti": "2026-07-21T22:00:00+00:00",
+        "dataFiPublicacio": "3000-01-01T00:00:00+00:00",
+        "dataArticle": "2026-07-15T10:00:00+00:00",
+        "isExtra": "False",
+        "numButlleti": "82",
+        "anyButlleti": "2026",
+        "sumari": "Av%c3%ads del 16-7-2026 pel qual es notifica al Sr. Haibin Pan%2c president de la societat OEC%2c SLU%2c que la Ministra de Presid%c3%a8ncia%2c Economia%2c Treball i Habitatge%2c va dictar un acte que afecta els seus interessos (Ref. SIT-C52%2f25).",
+        "nomDocument": "GF_2026_07_16_11_16_54",
+        "ordreOrganisme": 3,
+        "ordreOrganismeFill": 13,
+        "epubDocument": null,
+        "xmlDocument": null,
+        "wordDocument": null
+      }
+    },
+    {
+      "score": 1.0,
+      "highlights": null,
+      "document": {
+        "metadata_storage_name": "CGC_2026_07_16_11_25_58.html",
+        "metadata_storage_size": 3363,
+        "metadata_storage_path": "https://bopadocuments.blob.core.windows.net/bopa-documents/038082/html/CGC_2026_07_16_11_25_58.html",
+        "organisme": "Concursos i subhastes",
+        "organismePare": "02. Consell General",
+        "tema": "Serveis",
+        "temaPare": "08. Concursos",
+        "fileType": "html",
+        "dataPublicacioButlleti": "2026-07-21T22:00:00+00:00",
+        "dataFiPublicacio": "3000-01-01T00:00:00+00:00",
+        "dataArticle": "2026-07-14T10:00:00+00:00",
+        "isExtra": "False",
+        "numButlleti": "82",
+        "anyButlleti": "2026",
+        "sumari": "Edicte del 15-7-2026 pel qual es convoca un concurs p%c3%bablic nacional per a la contractaci%c3%b3 de l%e2%80%99avantprojecte%2c projecte executiu i execuci%c3%b3 de l%e2%80%99experi%c3%a8ncia immersiva i del sistema d%e2%80%99audioguiatge del recorregut de la visita a la Casa de la Vall.",
+        "nomDocument": "CGC_2026_07_16_11_25_58",
+        "ordreOrganisme": 2,
+        "ordreOrganismeFill": 6,
+        "epubDocument": null,
+        "xmlDocument": null,
+        "wordDocument": null
+      }
+    },
+    {
+      "score": 1.0,
+      "highlights": null,
+      "document": {
+        "metadata_storage_name": "GR_2026_07_17_12_01_36.html",
+        "metadata_storage_size": 38020,
+        "metadata_storage_path": "https://bopadocuments.blob.core.windows.net/bopa-documents/038082/html/GR_2026_07_17_12_01_36.html",
+        "organisme": "Reglaments",
+        "organismePare": "03. Govern",
+        "tema": "Reglaments",
+        "temaPare": "20. Reglaments",
+        "fileType": "html",
+        "dataPublicacioButlleti": "2026-07-21T22:00:00+00:00",
+        "dataFiPublicacio": "3000-01-01T00:00:00+00:00",
+        "dataArticle": "2026-07-14T10:00:00+00:00",
+        "isExtra": "False",
+        "numButlleti": "82",
+        "anyButlleti": "2026",
+        "sumari": "Decret 281%2f2026%2c del 15-7-2026%2c pel qual s%e2%80%99aprova el Reglament de tinen%c3%a7a%2c port i %c3%bas de les armes de foc i dels mitjans de subjecci%c3%b3 i coercitius autoritzats als membres del Cos de Policia.",
+        "nomDocument": "GR_2026_07_17_12_01_36",
+        "ordreOrganisme": 3,
+        "ordreOrganismeFill": 4,
+        "epubDocument": null,
+        "xmlDocument": null,
+        "wordDocument": null
+      }
+    }
+  ]
+}

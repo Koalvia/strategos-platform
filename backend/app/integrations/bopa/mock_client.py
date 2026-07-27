@@ -30,7 +30,14 @@ from app.integrations.bopa.models import (
 
 _FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-# A tiny stand-in for a real document's HTML body, returned by ``fetch_content``.
+# Committed real HTML bodies, keyed by their file name. A document whose
+# ``source_url`` ends with one of these names is served its genuine body (so the
+# analysis pipeline reads the real edict text and can match it against
+# customers); every other document falls back to the canned stub below.
+_BODIES_DIR = _FIXTURES_DIR / "bodies"
+
+# A tiny stand-in for a real document's HTML body, returned by ``fetch_content``
+# for any document without a committed body.
 _CANNED_HTML = (
     "<html><head><title>BOPA document (mock)</title></head>"
     "<body><p>Mock BOPA document content.</p></body></html>"
@@ -47,9 +54,17 @@ def _load_documents_page(filename: str) -> BopaDocumentsPage:
     return BopaDocumentsPage.model_validate(raw)
 
 
+def _load_bodies() -> dict[str, bytes]:
+    """Read every ``bodies/*.html`` fixture into a ``{file_name: bytes}`` map."""
+    if not _BODIES_DIR.is_dir():
+        return {}
+    return {path.name: path.read_bytes() for path in _BODIES_DIR.glob("*.html")}
+
+
 # Validate every fixture once at import.
 _MONTH_BULLETINS = _load_bulletins("month_bulletins.json")
-_DOCUMENTS_PAGE = _load_documents_page("documents_by_bopa_77_2026.json")
+_DOCUMENTS_PAGE = _load_documents_page("documents_by_bopa_82_2026.json")
+_BODIES = _load_bodies()
 
 
 class MockBopaClient(BopaClient):
@@ -75,4 +90,12 @@ class MockBopaClient(BopaClient):
         return build_sumari_pdf_url(self._blob_base_url, year, num)
 
     def fetch_content(self, source_url: str) -> bytes:
-        return _CANNED_HTML
+        """Return a document's committed real body, or the canned stub.
+
+        ``source_url`` is a blob path ending in the document's file name (e.g.
+        ``.../html/GF_2026_07_16_11_16_54.html``); a body committed under
+        ``fixtures/bodies/`` with that name is returned so the pipeline sees the
+        genuine edict text. Anything else falls back to ``_CANNED_HTML``.
+        """
+        file_name = source_url.rsplit("/", 1)[-1]
+        return _BODIES.get(file_name, _CANNED_HTML)

@@ -5,10 +5,9 @@ obligation alerts) so the "Iniciar Escaneo" button gets the refreshed state back
 in one round-trip. The Celery ``worker_ready`` handler queues the same three
 steps as a chain every time a worker starts.
 
-The pipeline steps themselves are covered by ``test_customer_bopa_matches`` and
-``test_run_bopa_pipeline``; here we replace them with recorders so these tests
-stay fast and assert only the wiring: HTTP shape, execution order, and the chain
-that gets queued on startup.
+The pipeline steps themselves are covered by ``test_customer_bopa_matches``; here
+we replace them with recorders so these tests stay fast and assert only the
+wiring: HTTP shape, execution order, and the chain that gets queued on startup.
 """
 
 from datetime import datetime

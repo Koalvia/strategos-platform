@@ -165,8 +165,7 @@ def scan_bopa(
       BOPA-match alerts inline, and obligation alerts are a separate global job.
     - **Global** (no ``customer_id``): sync, analyze every unanalyzed bulletin
       against all customers/projects, then generate obligation alerts. Mirrors the
-      pipeline that runs on worker startup (see ``app.celery_app``) and the
-      ``scripts/run_bopa_pipeline`` helper.
+      pipeline that runs on worker startup (see ``app.celery_app``).
     """
     service = BopaService(db, bopa_client)
     sync_result = service.sync_latest()

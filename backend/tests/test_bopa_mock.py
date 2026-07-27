@@ -53,62 +53,57 @@ def test_mock_validates_fixtures_at_import():
 def test_get_month_bulletins_parses_fixture(client):
     """The listing fixture validates into DTOs with the year parsed out."""
     items = client.get_month_bulletins(date(2026, 7, 1))
-    assert len(items) == 2
+    assert len(items) == 1
 
     first = items[0]
-    assert first.num == 77
+    assert first.num == 82
     assert first.year == 2026
     assert first.is_extra is False
-    assert first.published_at == datetime(2026, 7, 7, 22, 0, tzinfo=timezone.utc)
-
-    # Endpoint 1's isExtra is a JSON boolean; the second issue is an extra.
-    assert items[1].num == 76
-    assert items[1].is_extra is True
+    assert first.published_at == datetime(2026, 7, 21, 22, 0, tzinfo=timezone.utc)
 
 
 @pytest.mark.unit
 def test_get_documents_by_bopa_parses_fixture(client):
     """The documents fixture unwraps paginatedDocuments and maps every field."""
-    page = client.get_documents_by_bopa(2026, 77)
+    page = client.get_documents_by_bopa(2026, 82)
     assert isinstance(page, BopaDocumentsPage)
-    assert page.total_count == 188
-    assert len(page.documents) == 2
+    # The API's totalCount exceeds the documents actually returned (a known
+    # upstream quirk); the fixture preserves it.
+    assert page.total_count == 209
+    assert len(page.documents) == 3
 
     doc = page.documents[0]
     assert isinstance(doc, BopaDocument)
-    assert doc.storage_name == "GLT_2026_07_06_11_34_08.html"
-    assert doc.storage_size == 2770
-    assert doc.source_url.endswith("/038077/html/GLT_2026_07_06_11_34_08.html")
-    assert doc.organisme == "Convenis internacionals"
+    assert doc.storage_name == "GF_2026_07_16_11_16_54.html"
+    assert doc.storage_size == 1873
+    assert doc.source_url.endswith("/038082/html/GF_2026_07_16_11_16_54.html")
+    assert doc.organisme == "Notificacions"
     assert doc.organisme_pare == "03. Govern"
-    assert doc.tema_pare == "11. Convenis internacionals"
+    assert doc.tema_pare == "15. Notificacions"
     assert doc.file_type == "html"
-    assert doc.num == 77
+    assert doc.num == 82
     assert doc.year == 2026
-    assert doc.document_name == "GLT_2026_07_06_11_34_08"
-    assert doc.published_at == datetime(2026, 7, 7, 22, 0, tzinfo=timezone.utc)
-    assert doc.article_date == datetime(2026, 7, 5, 10, 0, tzinfo=timezone.utc)
-
-    # htmlCopy variant preserved on the second document.
-    assert page.documents[1].file_type == "htmlCopy"
+    assert doc.document_name == "GF_2026_07_16_11_16_54"
+    assert doc.published_at == datetime(2026, 7, 21, 22, 0, tzinfo=timezone.utc)
+    assert doc.article_date == datetime(2026, 7, 15, 10, 0, tzinfo=timezone.utc)
 
 
 @pytest.mark.unit
 def test_documents_is_extra_string_normalized_to_bool(client):
-    """Endpoint 2's string ``"False"`` becomes a real ``bool``."""
-    doc = client.get_documents_by_bopa(2026, 77).documents[0]
+    """The documents endpoint's string ``"False"`` becomes a real ``bool``."""
+    doc = client.get_documents_by_bopa(2026, 82).documents[0]
     assert doc.is_extra is False
 
 
 @pytest.mark.unit
 def test_documents_sumari_percent_decoded(client):
     """``sumari`` is percent-decoded UTF-8 into the readable title."""
-    doc = client.get_documents_by_bopa(2026, 77).documents[0]
+    doc = client.get_documents_by_bopa(2026, 82).documents[0]
     assert doc.title == (
-        "Edicte del 6-7-2026 pel qual es fa pública la retirada de la reserva "
-        "emesa pel Principat d’Andorra relativa als articles 7 i 8 del "
-        "Conveni penal sobre la corrupció, fet a Estrasburg el 27 de gener de "
-        "1999."
+        "Avís del 16-7-2026 pel qual es notifica al Sr. Haibin Pan, president "
+        "de la societat OEC, SLU, que la Ministra de Presidència, Economia, "
+        "Treball i Habitatge, va dictar un acte que afecta els seus interessos "
+        "(Ref. SIT-C52/25)."
     )
     assert "%c3" not in doc.title
 
@@ -116,9 +111,9 @@ def test_documents_sumari_percent_decoded(client):
 @pytest.mark.unit
 def test_get_documents_returns_a_copy(client):
     """Mutating a returned page never corrupts the shared fixture state."""
-    first = client.get_documents_by_bopa(2026, 77)
+    first = client.get_documents_by_bopa(2026, 82)
     first.documents.clear()
-    assert len(client.get_documents_by_bopa(2026, 77).documents) == 2
+    assert len(client.get_documents_by_bopa(2026, 82).documents) == 3
 
 
 @pytest.mark.unit
@@ -158,11 +153,26 @@ def test_build_sumari_pdf_url_matches_verified_examples(client):
 
 
 @pytest.mark.unit
-def test_fetch_content_returns_bytes(client):
-    """The mock's ``fetch_content`` returns canned HTML bytes."""
+def test_fetch_content_falls_back_to_canned_html(client):
+    """A document without a committed body gets the canned HTML stub."""
     content = client.fetch_content("https://example.invalid/whatever.html")
     assert isinstance(content, bytes)
     assert b"<html>" in content
+    assert b"Mock BOPA document content." in content
+
+
+@pytest.mark.unit
+def test_fetch_content_serves_committed_real_body(client):
+    """A document with a committed body under ``fixtures/bodies/`` is served it.
+
+    The OEC, SLU edict body is what the analysis pipeline reads to match the
+    ``OEC, SLU`` customer, so its real text must reach ``fetch_content``.
+    """
+    doc = client.get_documents_by_bopa(2026, 82).documents[0]
+    content = client.fetch_content(doc.source_url)
+    assert isinstance(content, bytes)
+    assert b"OEC, SLU" in content
+    assert content != client.fetch_content("https://example.invalid/x.html")
 
 
 @pytest.mark.unit

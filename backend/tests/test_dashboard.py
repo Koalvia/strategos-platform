@@ -5,12 +5,12 @@ the customers / projects / obligations / tasks domains, all served from the
 fixture-backed ``MockBusinessCentralClient`` (the default DI mode). These tests
 cover:
 
-* the summary shape (four KPI tiles + the two list sections),
+* the summary shape (four KPI tiles + the "Próximas obligaciones" list + the
+  per-customer "Facturación" breakdown),
 * that each KPI is internally consistent with the underlying domain endpoint's
   count for the mock data (asserted against a frozen reference date for the
   obligation-derived numbers),
-* the "Próximas obligaciones" list (upcoming + overdue, ordered by due date),
-* "Mis tareas de hoy" scoped to the current user's unfinished, soon-due tasks, and
+* the "Próximas obligaciones" list (upcoming + overdue, ordered by due date), and
 * that the endpoint rejects unauthenticated requests.
 
 The obligation-derived numbers are computed against a reference "today"; tests
@@ -22,11 +22,11 @@ from collections import Counter
 from datetime import date
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.core.dependencies import get_business_central_client
 from app.db.session import get_db
-from app.domains.auth.models import User
-from app.domains.auth.utils import get_verified_user
 from app.domains.dashboard.router import get_reference_date
 from app.domains.dashboard.service import DashboardService
 from app.domains.obligations.router import (
@@ -55,34 +55,6 @@ def frozen_client(client):
     app.dependency_overrides.pop(get_reference_date, None)
 
 
-@pytest.fixture
-def frozen_bc_user_client(db_session):
-    """A frozen-date client whose user maps to BC assignee ``usr-anna``.
-
-    "Mis tareas de hoy" resolves the BC assignee by email, so the seeded user's
-    email must match a BC user (``anna@estrategos.ad``).
-    """
-    user = User(
-        name="Anna Ferrer",
-        email="anna@estrategos.ad",
-        hashed_password="not-a-real-hash",
-        is_verified=True,
-    )
-    db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
-
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_verified_user] = lambda: user
-    app.dependency_overrides[get_reference_date] = lambda: FROZEN_TODAY
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-
-
 # --------------------------------------------------------------------------- #
 # Shape
 # --------------------------------------------------------------------------- #
@@ -100,13 +72,16 @@ def test_summary_returns_all_sections(frozen_client):
         "tareas_pendientes",
         "clientes_activos",
         "proximas_obligaciones",
-        "mis_tareas_de_hoy",
         "facturacion",
+        "unavailable_sections",
     }
     assert set(body["proyectos_activos"]) == {"active", "total"}
     assert set(body["clientes_activos"]) == {"active", "total"}
     assert set(body["tareas_pendientes"]) == {"pending", "total"}
     assert set(body["obligaciones_proximas"]) == {"count"}
+    # Nothing fails against the fixture-backed mock client, so every section
+    # loaded and none reports as unavailable.
+    assert body["unavailable_sections"] == []
 
 
 @pytest.mark.integration
@@ -185,17 +160,142 @@ def test_dashboard_build_fetches_billing_lines_once(db_session):
     and hands them to the service instead of letting each breakdown re-fetch.
     """
     bc = _CountingBCClient(MockBusinessCentralClient())
-    user = User(
-        name="Test User",
-        email="test@example.com",
-        hashed_password="not-a-real-hash",
-        is_verified=True,
-    )
 
-    DashboardService(db_session, bc).build_summary(user, FROZEN_TODAY)
+    DashboardService(db_session, bc).build_summary(FROZEN_TODAY)
 
     assert bc.calls["get_sales_invoice_lines"] == 1
     assert bc.calls["get_sales_cr_memo_lines"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# Resilience: one unavailable BC endpoint must not blank the whole panel
+# --------------------------------------------------------------------------- #
+
+
+class _FailingBCClient(MockBusinessCentralClient):
+    """A mock client whose named getters raise, simulating an unavailable entity.
+
+    Mirrors the BOPA suite's ``_FailingFetchClient``: everything else serves the
+    normal fixtures, so a test can assert that exactly the affected sections
+    degrade and the rest of the summary survives.
+    """
+
+    def __init__(self, *failing: str, error: Exception | None = None):
+        super().__init__()
+        self._failing = set(failing)
+        self._error = error or RuntimeError("simulated Business Central failure")
+
+    def __getattribute__(self, name):
+        # ``_failing`` itself must be fetched normally to avoid infinite recursion.
+        if not name.startswith("_") and name in object.__getattribute__(
+            self, "_failing"
+        ):
+
+            def fail(*args, **kwargs):
+                raise object.__getattribute__(self, "_error")
+
+            return fail
+        return object.__getattribute__(self, name)
+
+
+@pytest.mark.integration
+def test_failing_billing_source_degrades_only_that_section(db_session):
+    """An unavailable invoice endpoint nulls facturacion, not the whole summary."""
+    bc = _FailingBCClient("get_sales_invoice_lines")
+
+    summary = DashboardService(db_session, bc).build_summary(FROZEN_TODAY)
+
+    assert summary.facturacion is None
+    assert summary.unavailable_sections == ["billing"]
+    # Every other section still loaded and carries real figures.
+    assert summary.clientes_activos.total == 15
+    assert summary.proyectos_activos.total == 19
+    assert summary.tareas_pendientes.total == 17
+    assert summary.obligaciones_proximas.count > 0
+    assert summary.proximas_obligaciones
+
+
+@pytest.mark.integration
+def test_failing_projects_source_degrades_its_dependents(db_session):
+    """The projects fetch is shared, so its failure also nulls the billing table."""
+    bc = _FailingBCClient("get_projects")
+
+    summary = DashboardService(db_session, bc).build_summary(FROZEN_TODAY)
+
+    assert summary.proyectos_activos is None
+    assert summary.facturacion is None
+    assert set(summary.unavailable_sections) == {"projects", "tasks", "obligations",
+                                                "billing"}
+    # Customers does not depend on projects in the mock client, so it survives.
+    assert summary.clientes_activos.total == 15
+
+
+@pytest.mark.integration
+def test_failing_tasks_source_degrades_only_the_tasks_kpi(db_session):
+    """userTasks being unavailable leaves the other three KPI tiles intact."""
+    bc = _FailingBCClient("get_user_tasks")
+
+    summary = DashboardService(db_session, bc).build_summary(FROZEN_TODAY)
+
+    assert summary.tareas_pendientes is None
+    assert summary.unavailable_sections == ["tasks"]
+    assert summary.clientes_activos.total == 15
+    assert summary.proyectos_activos.total == 19
+    assert summary.facturacion
+
+
+@pytest.mark.integration
+def test_http_exception_from_bc_is_not_masked_as_missing_data(db_session):
+    """A deliberate HTTPException propagates instead of degrading to None.
+
+    An auth/404 outcome is a real HTTP result, not an integration outage; masking
+    it as "section unavailable" would hide a genuine error from the caller.
+    """
+    bc = _FailingBCClient(
+        "get_customers", error=HTTPException(status_code=403, detail="Forbidden")
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        DashboardService(db_session, bc).build_summary(FROZEN_TODAY)
+    assert excinfo.value.status_code == 403
+
+
+@pytest.mark.integration
+def test_http_exception_from_an_optional_billing_source_is_not_masked(db_session):
+    """A 401 on the cost source surfaces instead of nulling just that column.
+
+    ``jobLedgerEntries`` feeds an *optional* column that normally degrades to
+    ``None`` when the tenant lacks the entity. An HTTP outcome is different: bad
+    credentials must reach the caller, not hide behind an em dash in the table.
+    """
+    bc = _FailingBCClient(
+        "get_job_ledger_entries",
+        error=HTTPException(status_code=401, detail="Unauthorized"),
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        DashboardService(db_session, bc).build_summary(FROZEN_TODAY)
+    assert excinfo.value.status_code == 401
+
+
+@pytest.mark.integration
+def test_summary_endpoint_returns_200_when_a_section_is_unavailable(client):
+    """The endpoint degrades to a partial 200 rather than a blanket 500."""
+    app.dependency_overrides[get_reference_date] = lambda: FROZEN_TODAY
+    app.dependency_overrides[get_business_central_client] = lambda: _FailingBCClient(
+        "get_sales_invoice_lines"
+    )
+    try:
+        resp = client.get(SUMMARY_URL)
+    finally:
+        app.dependency_overrides.pop(get_business_central_client, None)
+        app.dependency_overrides.pop(get_reference_date, None)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["facturacion"] is None
+    assert body["unavailable_sections"] == ["billing"]
+    assert body["clientes_activos"] == {"active": 14, "total": 15}
 
 
 # --------------------------------------------------------------------------- #
@@ -212,7 +312,7 @@ def test_clientes_activos_matches_customers_endpoint(frozen_client):
     ).json()["items"]
     kpi = frozen_client.get(SUMMARY_URL).json()["clientes_activos"]
     assert kpi == {"active": len(active), "total": len(customers)}
-    assert kpi == {"active": 13, "total": 14}
+    assert kpi == {"active": 14, "total": 15}
 
 
 @pytest.mark.integration
@@ -224,16 +324,17 @@ def test_proyectos_activos_matches_projects_endpoint(frozen_client):
     ).json()["items"]
     kpi = frozen_client.get(SUMMARY_URL).json()["proyectos_activos"]
     assert kpi == {"active": len(active), "total": len(projects)}
-    assert kpi == {"active": 17, "total": 18}
+    assert kpi == {"active": 18, "total": 19}
 
 
 @pytest.mark.integration
 def test_generated_data_reflected_in_kpis(frozen_client):
     """The generated clients/projects show up in the KPI totals."""
     body = frozen_client.get(SUMMARY_URL).json()
-    # 8 original + 6 generated customers; 12 original + 6 generated projects.
-    assert body["clientes_activos"]["total"] == 14
-    assert body["proyectos_activos"]["total"] == 18
+    # 8 original + 6 generated + OEC SLU (cust-015) = 15 customers; the matching
+    # projects total 19 (proj-001..019).
+    assert body["clientes_activos"]["total"] == 15
+    assert body["proyectos_activos"]["total"] == 19
 
 
 @pytest.mark.integration
@@ -243,7 +344,7 @@ def test_tareas_pendientes_counts_unfinished_tasks(frozen_client):
     not_done = [t for t in tasks if t["status"] != "Hecho"]
     kpi = frozen_client.get(SUMMARY_URL).json()["tareas_pendientes"]
     assert kpi == {"pending": len(not_done), "total": len(tasks)}
-    assert kpi == {"pending": 13, "total": 15}
+    assert kpi == {"pending": 15, "total": 17}
 
 
 @pytest.mark.integration
@@ -299,33 +400,6 @@ def test_proximas_obligaciones_are_upcoming_or_overdue_ordered(frozen_client):
         "submission_date",
         "status",
     }
-
-
-# --------------------------------------------------------------------------- #
-# Mis tareas de hoy
-# --------------------------------------------------------------------------- #
-
-
-@pytest.mark.integration
-def test_mis_tareas_scoped_to_current_user(frozen_bc_user_client):
-    """"Mis tareas de hoy" returns the user's unfinished, soon-due tasks, ordered."""
-    body = frozen_bc_user_client.get(SUMMARY_URL).json()
-    mis = body["mis_tareas_de_hoy"]
-    # Only usr-anna's tasks, none of them Hecho, all due on/before the window end.
-    assert {t["assignee"]["id"] for t in mis} == {"usr-anna"}
-    assert "Hecho" not in {t["status"] for t in mis}
-    # task-015 (Hecho) drops out; task-003/006/011 are due within the window.
-    assert [t["id"] for t in mis] == ["task-006", "task-011", "task-003"]
-    due_dates = [t["due_date"] for t in mis]
-    assert due_dates == sorted(due_dates)
-
-
-@pytest.mark.integration
-def test_mis_tareas_empty_when_no_bc_user_matches(frozen_client):
-    """A local user with no matching BC email has no "mis tareas de hoy"."""
-    # The default ``test_user`` email (test@example.com) is not a BC user.
-    body = frozen_client.get(SUMMARY_URL).json()
-    assert body["mis_tareas_de_hoy"] == []
 
 
 # --------------------------------------------------------------------------- #

@@ -73,14 +73,14 @@ def test_port_defines_all_expected_methods():
 
 @pytest.mark.unit
 def test_get_customers_count_type_and_active_split(client):
-    """Exactly 14 customers (13 active, 1 inactive), all typed."""
+    """Exactly 15 customers (14 active, 1 inactive), all typed."""
     customers = client.get_customers()
-    assert len(customers) == 14
+    assert len(customers) == 15
     assert all(isinstance(c, BCCustomer) for c in customers)
 
     active = [c for c in customers if c.status is CustomerStatus.active]
     inactive = [c for c in customers if c.status is CustomerStatus.inactive]
-    assert len(active) == 13
+    assert len(active) == 14
     assert len(inactive) == 1
     assert inactive[0].name == "Clínica Dental Ordino SL"
 
@@ -101,7 +101,7 @@ def test_get_customers_page_slices_and_sets_next_cursor(client):
 def test_get_customers_page_last_page_has_no_next_cursor(client):
     """Once every customer has been returned, ``next_cursor`` is ``None``."""
     page = client.get_customers_page(page_size=100)
-    assert len(page.items) == 14
+    assert len(page.items) == 15
     assert page.next_cursor is None
 
 
@@ -123,7 +123,7 @@ def test_get_customers_page_filters_by_status(client):
     assert page.items[0].name == "Clínica Dental Ordino SL"
 
     page = client.get_customers_page(status=CustomerStatus.active, page_size=100)
-    assert len(page.items) == 13
+    assert len(page.items) == 14
 
 
 @pytest.mark.unit
@@ -152,13 +152,13 @@ def test_get_users_count_type_and_emails(client):
 
 @pytest.mark.unit
 def test_get_projects_count_type_and_active_split(client):
-    """18 projects, one inactive (belonging to the inactive customer)."""
+    """19 projects, one inactive (belonging to the inactive customer)."""
     projects = client.get_projects()
-    assert len(projects) == 18
+    assert len(projects) == 19
     assert all(isinstance(p, BCProject) for p in projects)
 
     active = [p for p in projects if p.status is ProjectStatus.active]
-    assert len(active) == 17
+    assert len(active) == 18
 
 
 @pytest.mark.unit
@@ -177,7 +177,7 @@ def test_get_projects_page_slices_and_sets_next_cursor(client):
 def test_get_projects_page_last_page_has_no_next_cursor(client):
     """Once every project has been returned, ``next_cursor`` is ``None``."""
     page = client.get_projects_page(page_size=100)
-    assert len(page.items) == 18
+    assert len(page.items) == 19
     assert page.next_cursor is None
 
 
@@ -203,6 +203,16 @@ def test_get_projects_page_filters_by_status(client):
     """``status`` keeps only projects in that state."""
     page = client.get_projects_page(status=ProjectStatus.inactive, page_size=100)
     assert [p.id for p in page.items] == ["proj-012"]
+
+
+@pytest.mark.unit
+def test_get_projects_page_filters_by_customer_id(client):
+    """``customer_id`` keeps only that customer's projects. The filter is
+    applied before pagination, so a customer's projects are all found within
+    the first page of *their* results, not diluted by the rest of the firm's
+    projects filling up the page window first."""
+    page = client.get_projects_page(customer_id="cust-001", page_size=100)
+    assert {p.id for p in page.items} == {"proj-001", "proj-002"}
 
 
 @pytest.mark.unit
@@ -245,15 +255,15 @@ def test_get_obligations_catalog(client):
 
 @pytest.mark.unit
 def test_get_user_tasks_count_type_and_status_split(client):
-    """15 tasks split 10 pending / 3 in progress / 2 done, matching the board."""
+    """17 tasks split 12 pending / 3 in progress / 2 done, matching the board."""
     tasks = client.get_user_tasks()
-    assert len(tasks) == 15
+    assert len(tasks) == 17
     assert all(isinstance(t, BCUserTask) for t in tasks)
 
     by_status = {status: 0 for status in TaskStatus}
     for task in tasks:
         by_status[task.status] += 1
-    assert by_status[TaskStatus.pending] == 10
+    assert by_status[TaskStatus.pending] == 12
     assert by_status[TaskStatus.in_progress] == 3
     assert by_status[TaskStatus.done] == 2
 
@@ -323,7 +333,7 @@ def test_returned_lists_are_isolated_copies(client):
     """Mutating a returned list does not corrupt shared fixture state."""
     first = client.get_customers()
     first.clear()
-    assert len(client.get_customers()) == 14
+    assert len(client.get_customers()) == 15
 
 
 @pytest.mark.unit

@@ -115,6 +115,7 @@ class MockBusinessCentralClient(BusinessCentralClient):
         project_type: str | None = None,
         entity_type: str | None = None,
         status: ProjectStatus | None = None,
+        customer_id: str | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
     ) -> BCProjectPage:
@@ -124,6 +125,9 @@ class MockBusinessCentralClient(BusinessCentralClient):
         if search:
             needle = search.casefold()
             projects = [p for p in projects if needle in p.name.casefold()]
+
+        if customer_id is not None:
+            projects = [p for p in projects if p.customer_id == customer_id]
 
         if project_type is not None:
             wanted = project_type.casefold()

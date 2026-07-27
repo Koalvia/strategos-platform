@@ -13,7 +13,8 @@ confirmed BC payloads (no real Strategos client data / PII). They cover:
 * the obligations / projectObligations mapping, including the
   ``periodicity``/``dueDateRule`` and ``subject``/``dueDate``/``submissionDate``
   fields BC now provides (and the undated fallback when a date is absent);
-* that the still-deferred ``userTasks`` entity raises ``NotImplementedError``.
+* that the still-deferred ``userTasks`` entity returns ``[]`` with a warning
+  logged, instead of raising.
 """
 
 import logging
@@ -412,6 +413,26 @@ def test_projects_page_sends_top_and_combined_filter():
 
 
 @pytest.mark.unit
+def test_projects_page_filters_by_customer_id():
+    """``customer_id`` is pushed down as a ``billToCustomerNo`` filter clause,
+    combined with ``search``/``status`` — this is what makes a customer's
+    projects findable regardless of how many total projects the page window
+    would otherwise cover."""
+    rows = [{"no": "P1", "description": "Fiscal advisory", "status": "Open"}]
+    client, requests = _build_projects_page(projects_rows=rows)
+
+    client.get_projects_page(
+        search="fiscal", status=ProjectStatus.active, customer_id="C1"
+    )
+
+    projects_request = next(r for r in requests if r.url.path.endswith("/projects"))
+    filter_clause = projects_request.url.params["$filter"]
+    assert "billToCustomerNo eq 'C1'" in filter_clause
+    assert "contains(description,'fiscal')" in filter_clause
+    assert "tolower(status) ne 'completed'" in filter_clause
+
+
+@pytest.mark.unit
 def test_projects_page_status_inactive_matches_completed():
     """``Inactivo`` filters for exactly ``status`` == "completed" (any case)."""
     client, requests = _build_projects_page(projects_rows=[])
@@ -719,11 +740,18 @@ def test_project_obligation_without_due_date_stays_undated():
 
 
 @pytest.mark.unit
-def test_user_tasks_raise_not_implemented():
-    """userTasks stays deferred and raises a clear NotImplementedError."""
+def test_user_tasks_returns_empty_list_and_logs_warning(caplog):
+    """userTasks stays deferred: returns [] and logs a warning, doesn't raise."""
     client, _ = _build()
-    with pytest.raises(NotImplementedError, match="get_user_tasks"):
-        client.get_user_tasks()
+
+    with caplog.at_level(logging.WARNING):
+        tasks = client.get_user_tasks()
+
+    assert tasks == []
+    assert any(
+        "get_user_tasks" in r.getMessage() and r.levelno == logging.WARNING
+        for r in caplog.records
+    )
 
 
 @pytest.mark.unit
@@ -776,10 +804,20 @@ def _build_billing(**rows_by_entity):
 
 @pytest.mark.unit
 def test_sales_invoice_header_and_line_mapping():
-    """Headers map no/customer/postingDate; lines map amount/jobNo/type/number."""
+    """Headers map no/customer/postingDate; lines map amount/jobNo/type/number.
+
+    The customer comes from ``billToCustomerNo`` — the same field projects are
+    attributed by — so ``sellToCustomerNo`` is present here and deliberately
+    ignored.
+    """
     client, _ = _build_billing(
         salesInvoiceHeaders=[
-            {"no": "INV-1", "sellToCustomerNumber": "C1", "postingDate": "2026-01-15"}
+            {
+                "no": "INV-1",
+                "billToCustomerNo": "C1",
+                "sellToCustomerNo": "C9",
+                "postingDate": "2026-01-15",
+            }
         ],
         salesInvoiceLines=[
             {
@@ -813,7 +851,12 @@ def test_sales_cr_memo_mapping():
     """Credit-memo headers and lines map like invoices (amount subtracts later)."""
     client, _ = _build_billing(
         salesCrMemoHeaders=[
-            {"no": "CM-1", "sellToCustomerNumber": "C1", "postingDate": "2026-02-20"}
+            {
+                "no": "CM-1",
+                "billToCustomerNo": "C1",
+                "sellToCustomerNo": "C9",
+                "postingDate": "2026-02-20",
+            }
         ],
         salesCrMemoLines=[{"documentNo": "CM-1", "lineAmount": 200.0, "jobNo": "P1"}],
     )
@@ -891,13 +934,17 @@ def test_job_ledger_entries_with_rows_logs_no_warning(caplog):
 
 @pytest.mark.unit
 def test_time_sheet_and_resource_mapping():
-    """Time-sheet entries and resources map their quantity/cost/price fields."""
+    """Time-sheet entries and resources map their quantity/cost/price fields.
+
+    ``timeSheetPostingEntries`` carries no ``jobNo``: the project number arrives
+    in ``documentNo``. It exposes no resource field either, so ``resource_no``
+    stays unset.
+    """
     client, _ = _build_billing(
         timeSheetPostingEntries=[
             {
                 "timeSheetNo": "TS-1",
-                "jobNo": "P1",
-                "resourceNo": "RES-01",
+                "documentNo": "P1",
                 "quantity": 8.0,
                 "postingDate": "2026-01-20",
             }
@@ -909,7 +956,7 @@ def test_time_sheet_and_resource_mapping():
     assert (ts.time_sheet_no, ts.project_id, ts.resource_no, ts.quantity) == (
         "TS-1",
         "P1",
-        "RES-01",
+        "",
         8.0,
     )
 

@@ -234,7 +234,9 @@ class BCSalesInvoiceHeader(BaseModel):
     """A sales-invoice header (BC ``GET /salesInvoiceHeaders``).
 
     ``document_no`` (BC ``no``) is the invoice number a line references via its
-    own ``documentNo``. ``customer_id`` is BC ``sellToCustomerNumber``.
+    own ``documentNo``. ``customer_id`` is BC ``billToCustomerNo`` — the same
+    field projects use for their customer, so per-customer billing and the
+    per-project rows attribute to the same customer.
     """
 
     document_no: str
@@ -302,13 +304,18 @@ class BCJobLedgerEntry(BaseModel):
 class BCTimeSheetPostingEntry(BaseModel):
     """A time-sheet posting entry (BC ``GET /timeSheetPostingEntries``).
 
-    Read-through only for now (hours are not yet aggregated). ``project_id`` is
-    BC ``jobNo``, ``resource_no`` is the resource that logged ``quantity`` hours.
+    ``quantity`` is the hours logged, rolled up per project by the billing
+    domain. ``project_id`` comes from BC ``documentNo`` — this entity carries no
+    ``jobNo``, unlike the other project-scoped ones.
+
+    ``resource_no`` has **no BC source** on this entity (it exposes no resource
+    field), so it stays unset; it is kept for callers that may later resolve the
+    resource another way.
     """
 
     time_sheet_no: str
     project_id: str | None = None
-    resource_no: str
+    resource_no: str = ""
     quantity: float = 0.0
     posting_date: date | None = None
 
