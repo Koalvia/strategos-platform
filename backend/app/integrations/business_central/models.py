@@ -97,6 +97,20 @@ class BCCustomerPage(BaseModel):
     next_cursor: str | None = None
 
 
+class BCCustomerRef(BaseModel):
+    """Just a customer's identity — the id and the display name."""
+
+    id: str
+    name: str
+
+
+class BCCustomerRefPage(BaseModel):
+    """One name-ordered page of customer identities, plus the overall total."""
+
+    items: list[BCCustomerRef]
+    total_count: int
+
+
 class BCProject(BaseModel):
     """A project delivered for a customer (BC ``GET /projects``).
 
@@ -287,9 +301,13 @@ class BCJobLedgerEntry(BaseModel):
     """A job-ledger entry (BC ``GET /jobLedgerEntries``).
 
     The live client fetches only ``entryType eq 'Usage'`` rows (the cost side of
-    a project). ``entry_no`` is BC ``no``, ``project_id`` is ``jobNo``,
+    a project). ``entry_no`` is BC ``entryNo``, ``project_id`` is ``jobNo``,
     ``customer_id`` is ``customerNo``, ``total_cost_lcy`` is the entry's cost in
     local currency, and ``line_type`` is BC ``type``.
+
+    ``entry_no`` is deliberately **not** BC ``no``: on this entity that field
+    holds the line's resource/item code (e.g. ``"E0020"``), which repeats across
+    every entry consuming the same resource, so it cannot identify an entry.
     """
 
     entry_no: str

@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from app.integrations.business_central.models import (
     BCCustomer,
     BCCustomerPage,
+    BCCustomerRefPage,
     BCJobLedgerEntry,
     BCObligation,
     BCProject,
@@ -34,6 +35,17 @@ from app.integrations.business_central.models import (
 # query params so the API and the client implementations agree on them.
 DEFAULT_CUSTOMERS_PAGE_SIZE = 25
 DEFAULT_PROJECTS_PAGE_SIZE = 25
+
+# Several readers below take an optional list of ids that scopes the read
+# server-side. They all follow the same contract:
+#
+# * ``None``  -> every row (the historical behaviour, so existing callers that
+#                pass nothing are unaffected).
+# * ``[]``    -> no rows, returned without reading from Business Central at all.
+#
+# The empty-list case matters: treating it as "no filter" would silently turn a
+# scoped read back into a company-wide one, which is exactly what these
+# parameters exist to avoid.
 
 
 class BusinessCentralClient(ABC):
@@ -59,21 +71,31 @@ class BusinessCentralClient(ABC):
         cursor: str | None = None,
         page_size: int = DEFAULT_CUSTOMERS_PAGE_SIZE,
     ) -> BCCustomerPage:
-        """Return one page of customers, optionally filtered by ``search``/``status``.
+        """Return one page of customers, optionally filtered by ``search``/``status``."""
+        raise NotImplementedError
 
-        ``cursor`` is an opaque continuation token taken from a previous
-        page's ``next_cursor``; when given, ``search``/``status``/``page_size``
-        are ignored since the cursor already encodes the original query.
+    @abstractmethod
+    def get_customer_refs_page(
+        self, *, page: int, page_size: int
+    ) -> BCCustomerRefPage:
+        """Return one name-ordered page of customer identities, plus the total.
+        Ordering by name is what makes such a page cheap to build: a caller can
+        pick its customers *before* aggregating anything about them (see
+        ``BillingService.billing_for_customers``) instead of having to aggregate
+        every customer just to discover which ones the page contains.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def get_projects(self) -> list[BCProject]:
+    def get_projects(self, *, customer_ids: list[str] | None = None) -> list[BCProject]:
         """Return all projects (BC ``GET /projects``).
 
         Used where every project is genuinely needed (e.g. building an id ->
         name lookup for enrichment elsewhere) — see ``get_projects_page`` for
         the paginated, filtered listing used by the projects directory itself.
+
+        ``customer_ids`` scopes the read to those customers' projects, following
+        the shared filter contract above.
         """
         raise NotImplementedError
 
@@ -145,42 +167,73 @@ class BusinessCentralClient(ABC):
     # -- Billing / Costs -------------------------------------------------------
 
     @abstractmethod
-    def get_sales_invoice_headers(self) -> list[BCSalesInvoiceHeader]:
-        """Return all sales-invoice headers (BC ``GET /salesInvoiceHeaders``)."""
+    def get_sales_invoice_headers(
+        self, *, customer_ids: list[str] | None = None
+    ) -> list[BCSalesInvoiceHeader]:
+        """Return all sales-invoice headers (BC ``GET /salesInvoiceHeaders``).
+
+        ``customer_ids`` scopes the read to invoices billed to those customers,
+        following the shared filter contract above.
+        """
         raise NotImplementedError
 
     @abstractmethod
-    def get_sales_invoice_lines(self) -> list[BCSalesInvoiceLine]:
+    def get_sales_invoice_lines(
+        self, *, document_nos: list[str] | None = None
+    ) -> list[BCSalesInvoiceLine]:
         """Return all sales-invoice lines (BC ``GET /salesInvoiceLines``).
 
-        Each line links to its header on ``document_no``.
+        Each line links to its header on ``document_no``. ``document_nos`` scopes
+        the read to those documents' lines, following the shared filter contract
+        above — the way to read only one set of customers' lines is to fetch
+        their headers first and pass the document numbers through.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def get_sales_cr_memo_headers(self) -> list[BCSalesCrMemoHeader]:
-        """Return all sales credit-memo headers (BC ``GET /salesCrMemoHeaders``)."""
+    def get_sales_cr_memo_headers(
+        self, *, customer_ids: list[str] | None = None
+    ) -> list[BCSalesCrMemoHeader]:
+        """Return all sales credit-memo headers (BC ``GET /salesCrMemoHeaders``).
+
+        ``customer_ids`` scopes the read to credit memos billed to those
+        customers, following the shared filter contract above.
+        """
         raise NotImplementedError
 
     @abstractmethod
-    def get_sales_cr_memo_lines(self) -> list[BCSalesCrMemoLine]:
+    def get_sales_cr_memo_lines(
+        self, *, document_nos: list[str] | None = None
+    ) -> list[BCSalesCrMemoLine]:
         """Return all sales credit-memo lines (BC ``GET /salesCrMemoLines``).
 
-        Each line links to its header on ``document_no``.
+        Each line links to its header on ``document_no``. ``document_nos`` scopes
+        the read as in ``get_sales_invoice_lines``.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def get_job_ledger_entries(self) -> list[BCJobLedgerEntry]:
+    def get_job_ledger_entries(
+        self, *, project_ids: list[str] | None = None
+    ) -> list[BCJobLedgerEntry]:
         """Return job-ledger *usage* entries (BC ``GET /jobLedgerEntries``).
 
         Scoped to ``entryType eq 'Usage'`` (the cost side of a project).
+        ``project_ids`` narrows that further to those projects' entries,
+        following the shared filter contract above.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def get_time_sheet_posting_entries(self) -> list[BCTimeSheetPostingEntry]:
-        """Return all time-sheet posting entries (BC ``GET /timeSheetPostingEntries``)."""
+    def get_time_sheet_posting_entries(
+        self, *, project_ids: list[str] | None = None
+    ) -> list[BCTimeSheetPostingEntry]:
+        """Return all time-sheet posting entries (BC ``GET /timeSheetPostingEntries``).
+
+        ``project_ids`` scopes the read to those projects' entries, following the
+        shared filter contract above. Note this entity carries no ``jobNo``: the
+        project is referenced by ``documentNo`` (see the live implementation).
+        """
         raise NotImplementedError
 
     @abstractmethod

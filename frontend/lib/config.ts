@@ -38,7 +38,12 @@ export const config = {
           base: "/api/v1/users",
         },
         dashboard: {
-          summary: "/api/v1/dashboard/summary",
+          activeProjects: "/api/v1/dashboard/active-projects",
+          activeCustomers: "/api/v1/dashboard/active-customers",
+          pendingTasks: "/api/v1/dashboard/pending-tasks",
+          upcomingObligationsCount: "/api/v1/dashboard/upcoming-obligations-count",
+          obligations: "/api/v1/dashboard/obligations",
+          billing: "/api/v1/dashboard/billing",
         },
         bopa: {
           documents: "/api/v1/bopa/documents",
@@ -77,8 +82,15 @@ export const config = {
       users: {
         base: "/api/users",
       },
+      // One route per dashboard widget, so the page loads them in parallel and
+      // a slow or failing widget never blocks the others.
       dashboard: {
-        summary: "/api/dashboard",
+        activeProjects: "/api/dashboard/active-projects",
+        activeCustomers: "/api/dashboard/active-customers",
+        pendingTasks: "/api/dashboard/pending-tasks",
+        upcomingObligationsCount: "/api/dashboard/upcoming-obligations-count",
+        obligations: "/api/dashboard/obligations",
+        billing: "/api/dashboard/billing",
       },
       bopa: {
         documents: "/api/bopa/documents",

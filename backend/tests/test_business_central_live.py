@@ -873,7 +873,10 @@ def test_job_ledger_entries_send_usage_filter_and_map_cost():
     client, requests = _build_billing(
         jobLedgerEntries=[
             {
-                "no": "JLE-1",
+                # ``entryNo`` identifies the entry; ``no`` is the consumed
+                # resource's code, which repeats across entries.
+                "entryNo": 150,
+                "no": "E0020",
                 "jobNo": "P1",
                 "customerNo": "C1",
                 "entryType": "Usage",
@@ -892,7 +895,8 @@ def test_job_ledger_entries_send_usage_filter_and_map_cost():
     assert ledger_request.url.params["$filter"] == "entryType eq 'Usage'"
 
     entry = entries[0]
-    assert entry.entry_no == "JLE-1"
+    # BC sends entryNo as a JSON number; the DTO carries it as a string.
+    assert entry.entry_no == "150"
     assert entry.project_id == "P1"
     assert entry.customer_id == "C1"
     assert entry.total_cost_lcy == 400.0
@@ -920,7 +924,7 @@ def test_job_ledger_entries_empty_result_logs_warning(caplog):
 def test_job_ledger_entries_with_rows_logs_no_warning(caplog):
     """A non-empty usage result does not log the empty-result warning."""
     client, _ = _build_billing(
-        jobLedgerEntries=[{"no": "JLE-1", "jobNo": "P1", "entryType": "Usage"}]
+        jobLedgerEntries=[{"entryNo": 150, "jobNo": "P1", "entryType": "Usage"}]
     )
 
     with caplog.at_level(logging.WARNING):

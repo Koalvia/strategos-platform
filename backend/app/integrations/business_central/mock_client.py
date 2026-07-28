@@ -11,7 +11,9 @@ shared fixture state.
 """
 
 import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
 from pydantic import TypeAdapter
 
@@ -23,6 +25,8 @@ from app.integrations.business_central.client import (
 from app.integrations.business_central.models import (
     BCCustomer,
     BCCustomerPage,
+    BCCustomerRef,
+    BCCustomerRefPage,
     BCJobLedgerEntry,
     BCObligation,
     BCProject,
@@ -69,6 +73,23 @@ _TIME_SHEET_POSTING_ENTRIES = _load(
 )
 _RESOURCES = _load("resources.json", BCResource)
 
+_T = TypeVar("_T")
+
+
+def _filtered(
+    rows: list[_T], ids: list[str] | None, key: Callable[[_T], str | None]
+) -> list[_T]:
+    """Apply the port's shared id-filter contract to a fixture list.
+
+    ``None`` returns every row, an empty list returns none, and otherwise only
+    rows whose ``key`` is among ``ids`` — the in-memory equivalent of the
+    server-side ``$filter`` the live client pushes down.
+    """
+    if ids is None:
+        return list(rows)
+    wanted = set(ids)
+    return [row for row in rows if key(row) in wanted]
+
 
 class MockBusinessCentralClient(BusinessCentralClient):
     """A :class:`BusinessCentralClient` backed by committed JSON fixtures."""
@@ -105,8 +126,22 @@ class MockBusinessCentralClient(BusinessCentralClient):
 
         return BCCustomerPage(items=page, next_cursor=next_cursor)
 
-    def get_projects(self) -> list[BCProject]:
-        return list(_PROJECTS)
+    def get_customer_refs_page(
+        self, *, page: int, page_size: int
+    ) -> BCCustomerRefPage:
+        """Slice the fixture list by name, mirroring BC's ``$orderby``/``$top``/``$skip``."""
+        ordered = sorted(_CUSTOMERS, key=lambda c: c.name)
+        start = max(page - 1, 0) * page_size
+        return BCCustomerRefPage(
+            items=[
+                BCCustomerRef(id=c.id, name=c.name)
+                for c in ordered[start : start + page_size]
+            ],
+            total_count=len(_CUSTOMERS),
+        )
+
+    def get_projects(self, *, customer_ids: list[str] | None = None) -> list[BCProject]:
+        return _filtered(_PROJECTS, customer_ids, lambda p: p.customer_id)
 
     def get_projects_page(
         self,
@@ -169,23 +204,35 @@ class MockBusinessCentralClient(BusinessCentralClient):
 
     # -- Billing / Costs -------------------------------------------------------
 
-    def get_sales_invoice_headers(self) -> list[BCSalesInvoiceHeader]:
-        return list(_SALES_INVOICE_HEADERS)
+    def get_sales_invoice_headers(
+        self, *, customer_ids: list[str] | None = None
+    ) -> list[BCSalesInvoiceHeader]:
+        return _filtered(_SALES_INVOICE_HEADERS, customer_ids, lambda h: h.customer_id)
 
-    def get_sales_invoice_lines(self) -> list[BCSalesInvoiceLine]:
-        return list(_SALES_INVOICE_LINES)
+    def get_sales_invoice_lines(
+        self, *, document_nos: list[str] | None = None
+    ) -> list[BCSalesInvoiceLine]:
+        return _filtered(_SALES_INVOICE_LINES, document_nos, lambda line: line.document_no)
 
-    def get_sales_cr_memo_headers(self) -> list[BCSalesCrMemoHeader]:
-        return list(_SALES_CR_MEMO_HEADERS)
+    def get_sales_cr_memo_headers(
+        self, *, customer_ids: list[str] | None = None
+    ) -> list[BCSalesCrMemoHeader]:
+        return _filtered(_SALES_CR_MEMO_HEADERS, customer_ids, lambda h: h.customer_id)
 
-    def get_sales_cr_memo_lines(self) -> list[BCSalesCrMemoLine]:
-        return list(_SALES_CR_MEMO_LINES)
+    def get_sales_cr_memo_lines(
+        self, *, document_nos: list[str] | None = None
+    ) -> list[BCSalesCrMemoLine]:
+        return _filtered(_SALES_CR_MEMO_LINES, document_nos, lambda line: line.document_no)
 
-    def get_job_ledger_entries(self) -> list[BCJobLedgerEntry]:
-        return list(_JOB_LEDGER_ENTRIES)
+    def get_job_ledger_entries(
+        self, *, project_ids: list[str] | None = None
+    ) -> list[BCJobLedgerEntry]:
+        return _filtered(_JOB_LEDGER_ENTRIES, project_ids, lambda e: e.project_id)
 
-    def get_time_sheet_posting_entries(self) -> list[BCTimeSheetPostingEntry]:
-        return list(_TIME_SHEET_POSTING_ENTRIES)
+    def get_time_sheet_posting_entries(
+        self, *, project_ids: list[str] | None = None
+    ) -> list[BCTimeSheetPostingEntry]:
+        return _filtered(_TIME_SHEET_POSTING_ENTRIES, project_ids, lambda e: e.project_id)
 
     def get_resources(self) -> list[BCResource]:
         return list(_RESOURCES)

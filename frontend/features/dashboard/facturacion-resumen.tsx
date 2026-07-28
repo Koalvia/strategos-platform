@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronRight } from "lucide-react"
+import { useEffect, useState } from "react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import {
   Table,
@@ -13,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import type { CustomerBillingGroup } from "@/lib/types"
+import type { CustomerBillingGroup, PageMeta } from "@/lib/types"
 import { formatEuro, formatHours } from "./format"
 
 const HEAD_CLASS = "text-xs font-semibold uppercase tracking-wide text-slate-500"
@@ -25,6 +26,13 @@ interface FacturacionResumenProps {
   // explicit "unavailable" notice, never as an empty table (which would read as
   // "this customer has no billing").
   groups: CustomerBillingGroup[] | null
+  // Pagination window for `groups`, straight from the backend; null while the
+  // section is unavailable. Drives the footer's page counter and its controls.
+  meta: PageMeta | null
+  onPageChange: (page: number) => void
+  // True while a page is being fetched. Each page is a fresh Business Central
+  // read, so a click is not instant and needs to look like it registered.
+  isLoading?: boolean
 }
 
 // Unified billing table: each customer is an expandable parent row carrying its
@@ -32,9 +40,21 @@ interface FacturacionResumenProps {
 // expanding it reveals that customer's projects with their own billing, usage
 // cost and logged hours. Sourced live from Business Central. Replaces the
 // separate per-customer and per-project tables for a more compact overview.
-export function FacturacionResumen({ groups }: FacturacionResumenProps) {
+export function FacturacionResumen({
+  groups,
+  meta,
+  onPageChange,
+  isLoading = false,
+}: FacturacionResumenProps) {
   // Which customer rows are expanded. Collapsed by default to stay compact.
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  // Customer ids are page-scoped, so a stale expansion would otherwise linger
+  // (invisibly) after paging and re-open a row that happens to share an id.
+  const currentPage = meta?.page
+  useEffect(() => {
+    setExpanded(new Set())
+  }, [currentPage])
 
   const toggle = (customerId: string) => {
     setExpanded((prev) => {
@@ -62,7 +82,15 @@ export function FacturacionResumen({ groups }: FacturacionResumenProps) {
           Sin facturación registrada.
         </p>
       ) : (
-        <Table>
+        // Dimmed rather than replaced while paging: swapping in a skeleton would
+        // collapse the card's height and make the pager jump under the cursor.
+        <Table
+          className={cn(
+            "transition-opacity",
+            isLoading && "pointer-events-none opacity-50",
+          )}
+          aria-busy={isLoading}
+        >
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>
@@ -95,6 +123,35 @@ export function FacturacionResumen({ groups }: FacturacionResumenProps) {
             })}
           </TableBody>
         </Table>
+      )}
+      {meta && meta.total_pages > 1 && (
+        <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4">
+          <p className="text-sm text-slate-500">
+            Página {meta.page} de {meta.total_pages} · {meta.total_count} clientes
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isLoading || !meta.has_prev}
+              onClick={() => onPageChange(meta.page - 1)}
+            >
+              <ChevronLeft />
+              Anterior
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isLoading || !meta.has_next}
+              onClick={() => onPageChange(meta.page + 1)}
+            >
+              Siguiente
+              <ChevronRight />
+            </Button>
+          </div>
+        </div>
       )}
     </Card>
   )

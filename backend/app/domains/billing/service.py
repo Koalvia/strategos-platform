@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app import logger
 from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import (
+    BCCustomerRef,
     BCJobLedgerEntry,
     BCProject,
     BCSalesCrMemoLine,
@@ -85,15 +86,7 @@ class BillingService:
         cr_memo_lines: list[BCSalesCrMemoLine] | None = None,
     ) -> list[CustomerBillingResponse]:
         """Return net billing per customer (invoices minus credit memos).
-
-        Lines are attributed to a customer through their header
-        (``document_no`` → ``customer_id``); a line whose header is missing is
-        skipped since it cannot be attributed. Ordered by net billing desc.
-
-        ``invoice_lines``/``cr_memo_lines`` may be passed in when a caller has
-        already fetched them (the dashboard aggregates both breakdowns in one
-        request and reuses the lines across them); when omitted they are fetched
-        from Business Central.
+        when omitted they are fetched from Business Central.
         """
         if invoice_lines is None:
             invoice_lines = self.bc_client.get_sales_invoice_lines()
@@ -143,14 +136,9 @@ class BillingService:
         projects: list[BCProject] | None = None,
     ) -> list[ProjectBillingResponse]:
         """Return net billing, usage cost and logged hours per project.
-
         Groups on the line/entry ``project_id`` (BC ``jobNo``); lines with no
         project are excluded from the per-project billing (they still count in
-        ``billing_by_customer``). Ordered by billing desc.
-
-        ``invoice_lines``/``cr_memo_lines``/``projects`` may be passed in when a
-        caller has already fetched them (the dashboard reuses these across its
-        two billing breakdowns and its projects KPI); when omitted they are
+        ``billing_by_customer``). Ordered by billing desc. When omitted they are
         fetched from Business Central.
         """
         if invoice_lines is None:
@@ -363,3 +351,153 @@ class BillingService:
         ]
         groups.sort(key=lambda g: g.net_billed, reverse=True)
         return groups
+
+    def billing_for_customers(
+        self, customer_refs: list[BCCustomerRef]
+    ) -> list[CustomerBillingGroupResponse]:
+        """Return the same grouped breakdown for **only** the given customers.
+
+        The page-scoped counterpart to :meth:`billing_by_customer_grouped`. That
+        method aggregates the whole company because it has to: it orders by net
+        billing, and nobody can name the top ten billers without totalling
+        everyone first. This one is handed its customers up front (see
+        ``BusinessCentralClient.get_customer_refs_page``), so every Business
+        Central read below is filtered down to them, and the cost of a page stops
+        scaling with the size of the ledger.
+
+        The reads cascade — headers for these customers give both the
+        ``document_no`` → customer map *and* the exact documents whose lines to
+        ask for; the customers' projects give the ids to scope cost and hours to:
+
+        1. ``salesInvoiceHeaders`` / ``salesCrMemoHeaders`` by ``customer_ids``
+        2. ``salesInvoiceLines`` / ``salesCrMemoLines`` by those document numbers
+        3. ``projects`` by ``customer_ids``
+        4. ``jobLedgerEntries`` / ``timeSheetPostingEntries`` by those project ids
+
+        Groups come back in ``customer_refs`` order (the caller's, already
+        name-ordered) and names come from the refs, so no name lookup is needed.
+
+        Three differences from the company-wide method, all consequences of
+        working from an authoritative customer list rather than from whatever the
+        ledger happens to mention:
+
+        * A customer with no activity at all is still returned, reading ``0.0``,
+          instead of being absent.
+        * Every one of the customer's projects gets a row, not just those with
+          billing/cost/hours — so some rows read ``0.0`` too.
+        * A project's ``billed`` counts only lines on **that customer's own**
+          invoices. Grouping purely by ``jobNo`` (as the company-wide method
+          does) can file an amount invoiced to another customer under this one,
+          which is not a number a per-customer table should show.
+
+        There is likewise no ``"Sin cliente"`` bucket: customers are enumerated
+        authoritatively here, and a line whose ``jobNo`` matches none of the
+        customer's projects still counts in that customer's net through its
+        header.
+        """
+        if not customer_refs:
+            return []
+
+        customer_ids = [ref.id for ref in customer_refs]
+
+        invoice_headers = self.bc_client.get_sales_invoice_headers(
+            customer_ids=customer_ids
+        )
+        cr_memo_headers = self.bc_client.get_sales_cr_memo_headers(
+            customer_ids=customer_ids
+        )
+        invoice_lines = self.bc_client.get_sales_invoice_lines(
+            document_nos=[header.document_no for header in invoice_headers]
+        )
+        cr_memo_lines = self.bc_client.get_sales_cr_memo_lines(
+            document_nos=[header.document_no for header in cr_memo_headers]
+        )
+
+        projects = self.bc_client.get_projects(customer_ids=customer_ids)
+        project_ids = [project.id for project in projects]
+
+        # Same degrade-per-column contract as the company-wide path: a tenant
+        # without one of these entities reports that column as unknown rather
+        # than as zero. With no projects on the page both reads short-circuit to
+        # an empty result (see the port's filter contract), so the totals are a
+        # genuine 0.0 rather than an unverifiable one.
+        cost = self._optional_totals(
+            "jobLedgerEntries",
+            lambda: self.bc_client.get_job_ledger_entries(project_ids=project_ids),
+            lambda entry: entry.total_cost_lcy,
+        )
+        hours = self._optional_totals(
+            "timeSheetPostingEntries",
+            lambda: self.bc_client.get_time_sheet_posting_entries(
+                project_ids=project_ids
+            ),
+            lambda entry: entry.quantity,
+        )
+
+        document_customer = {
+            **{h.document_no: h.customer_id for h in invoice_headers},
+            **{h.document_no: h.customer_id for h in cr_memo_headers},
+        }
+
+        # One pass over both line sets: credit memos are the same amounts with
+        # the opposite sign, feeding the customer's net and its project's billing
+        # at once.
+        net_by_customer: dict[str, float] = {}
+        billed_by_project: dict[str, float] = {}
+        for lines, sign in ((invoice_lines, 1.0), (cr_memo_lines, -1.0)):
+            for line in lines:
+                amount = sign * line.line_amount
+                customer_id = document_customer.get(line.document_no)
+                if customer_id:
+                    net_by_customer[customer_id] = (
+                        net_by_customer.get(customer_id, 0.0) + amount
+                    )
+                if line.project_id:
+                    billed_by_project[line.project_id] = (
+                        billed_by_project.get(line.project_id, 0.0) + amount
+                    )
+
+        rows_by_customer: dict[str, list[ProjectBillingResponse]] = {}
+        for project in projects:
+            rows_by_customer.setdefault(project.customer_id, []).append(
+                ProjectBillingResponse(
+                    project_id=project.id,
+                    project_name=project.name,
+                    billed=round(
+                        billed_by_project.get(project.id, 0.0), _MONEY_DECIMALS
+                    ),
+                    cost=(
+                        None
+                        if cost is None
+                        else round(cost.get(project.id, 0.0), _MONEY_DECIMALS)
+                    ),
+                    hours=(
+                        None
+                        if hours is None
+                        else round(hours.get(project.id, 0.0), _MONEY_DECIMALS)
+                    ),
+                )
+            )
+        # Billing desc within each customer, matching billing_by_project's order.
+        for rows in rows_by_customer.values():
+            rows.sort(key=lambda row: row.billed, reverse=True)
+
+        return [
+            CustomerBillingGroupResponse(
+                customer_id=ref.id,
+                customer_name=ref.name,
+                net_billed=round(net_by_customer.get(ref.id, 0.0), _MONEY_DECIMALS),
+                cost=(
+                    _rollup(rows_by_customer.get(ref.id, []), lambda p: p.cost)
+                    if cost is not None
+                    else None
+                ),
+                hours=(
+                    _rollup(rows_by_customer.get(ref.id, []), lambda p: p.hours)
+                    if hours is not None
+                    else None
+                ),
+                projects=rows_by_customer.get(ref.id, []),
+            )
+            for ref in customer_refs
+        ]

@@ -28,6 +28,8 @@ from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import (
     BCCustomer,
     BCCustomerPage,
+    BCCustomerRef,
+    BCCustomerRefPage,
     BCObligation,
     BCProject,
     BCProjectObligation,
@@ -329,7 +331,13 @@ class _LiveShapedBCClient(BusinessCentralClient):
     def get_customers_page(self, **kwargs):
         return BCCustomerPage(items=self.get_customers(), next_cursor=None)
 
-    def get_projects(self):
+    def get_customer_refs_page(self, **kwargs):
+        return BCCustomerRefPage(
+            items=[BCCustomerRef(id=c.id, name=c.name) for c in self.get_customers()],
+            total_count=len(self.get_customers()),
+        )
+
+    def get_projects(self, **kwargs):
         return [
             BCProject(
                 id="P1",
