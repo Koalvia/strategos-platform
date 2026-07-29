@@ -21,6 +21,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app import logger
 from app.core.dependencies import get_business_central_client
 from app.db.session import get_db
 from app.domains.auth.models import User
@@ -57,7 +58,7 @@ def get_active_projects(
     result = DashboardService(db, bc_client).get_active_projects_kpi()
 
     duration = time.perf_counter() - start_time
-    print(
+    logger.info(
         f"[Performance] GET /active-projects | start {start_hour} | took {duration:.2f}s",
         flush=True,
     )
@@ -77,7 +78,7 @@ def get_active_customers(
     result = DashboardService(db, bc_client).get_active_customers_kpi()
 
     duration = time.perf_counter() - start_time
-    print(
+    logger.info(
         f"[Performance] GET /active-customers | start {start_hour} | took {duration:.2f}s",
         flush=True,
     )
@@ -97,7 +98,7 @@ def get_pending_tasks(
     result = DashboardService(db, bc_client).get_pending_tasks_kpi()
 
     duration = time.perf_counter() - start_time
-    print(
+    logger.info(
         f"[Performance] GET /pending-tasks | start {start_hour} | took {duration:.2f}s",
         flush=True,
     )
@@ -118,7 +119,7 @@ def get_upcoming_obligations_count(
     result = DashboardService(db, bc_client).get_upcoming_obligations_kpi(reference_date)
 
     duration = time.perf_counter() - start_time
-    print(
+    logger.info(
         f"[Performance] GET /upcoming-obligations-count | start {start_hour} | took {duration:.2f}s",
         flush=True,
     )
@@ -139,7 +140,7 @@ def get_upcoming_obligations_list(
     result = DashboardService(db, bc_client).get_upcoming_obligations_list(reference_date)
 
     duration = time.perf_counter() - start_time
-    print(
+    logger.info(
         f"[Performance] GET /obligations | start {start_hour} | took {duration:.2f}s",
         flush=True,
     )
@@ -161,7 +162,7 @@ def get_billing_summary(
     result = DashboardService(db, bc_client).get_billing(page=page, page_size=page_size)
 
     duration = time.perf_counter() - start_time
-    print(
+    logger.info(
         f"[Performance] GET /billing (page {page}) | start {start_hour} | took {duration:.2f}s",
         flush=True,
     )
