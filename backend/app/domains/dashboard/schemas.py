@@ -1,18 +1,19 @@
 """Pydantic v2 schemas for the dashboard (Dashboard) domain.
 
-The dashboard is a pure **aggregation** view: it has no data of its own. Its
-response is composed by the service from the customers / projects / obligations /
-tasks domains, so the two list sections reuse those domains' own response shapes
-(:class:`~app.domains.obligations.schemas.ProjectObligationResponse` and
-:class:`~app.domains.tasks.schemas.TaskResponse`) rather than redefining them.
+The dashboard is a pure **aggregation** view: it has no data of its own. Every
+widget is served by its own endpoint, and the two list widgets reuse the source
+domains' response shapes (:class:`~app.domains.obligations.schemas.ProjectObligationResponse`
+and :class:`~app.domains.billing.schemas.CustomerBillingGroupResponse`) rather
+than redefining them.
 
 Field names mirror the KPI tiles and widgets in ``dashboard.png`` (Proyectos
 activos / Obligaciones próximas / Tareas pendientes / Clientes activos, plus the
-"Próximas obligaciones" and "Mis tareas de hoy" lists).
+"Próximas obligaciones" list and the "Facturación" table).
 """
 
 from pydantic import BaseModel
 
+from app.core.schemas import PaginatedResponse
 from app.domains.billing.schemas import CustomerBillingGroupResponse
 from app.domains.obligations.schemas import ProjectObligationResponse
 
@@ -37,31 +38,17 @@ class CountKpi(BaseModel):
     count: int
 
 
-class DashboardSummary(BaseModel):
-    """The composed landing-screen summary.
+# One page of the "Facturación" table. Uses the shared pagination envelope so the
+# client learns the real total instead of receiving a bare, unbounded list it
+# cannot page through.
+CustomerBillingPage = PaginatedResponse[CustomerBillingGroupResponse]
 
-    The four count KPI tiles are firm-wide. ``proximas_obligaciones`` carries the
-    upcoming/overdue obligation instances across all projects, ordered by due
-    date.
 
-    The financial section is aggregated live from Business Central (see the
-    billing domain): ``facturacion`` carries the top customers by net billing,
-    each with its projects (billing, usage cost, hours) nested underneath for
-    the dashboard's unified accordion table.
-
-    **Every section is nullable.** ``None`` means "could not be loaded from
-    Business Central" — a distinct state from an empty list or a zero count,
-    which mean the section loaded fine and there is genuinely nothing to show.
-    The keys of the sections that failed are listed in ``unavailable_sections``
-    so the UI can name them instead of silently rendering a wrong figure. A
-    fully healthy summary has every section set and ``unavailable_sections``
-    empty.
-    """
-
-    proyectos_activos: ActiveTotalKpi | None = None
-    obligaciones_proximas: CountKpi | None = None
-    tareas_pendientes: PendingTotalKpi | None = None
-    clientes_activos: ActiveTotalKpi | None = None
-    proximas_obligaciones: list[ProjectObligationResponse] | None = None
-    facturacion: list[CustomerBillingGroupResponse] | None = None
-    unavailable_sections: list[str] = []
+__all__ = [
+    "ActiveTotalKpi",
+    "PendingTotalKpi",
+    "CountKpi",
+    "CustomerBillingPage",
+    "ProjectObligationResponse",
+    "CustomerBillingGroupResponse",
+]

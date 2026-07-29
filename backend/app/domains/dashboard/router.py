@@ -5,6 +5,10 @@ Business Central, which is the system of record. It has no persistence of its
 own. Every route requires a verified user (and the ``x-api-key`` gateway header,
 except under ``TESTING=1``).
 
+Each widget has its own endpoint so the frontend can load them granularly and in
+parallel: a Business Central outage behind one widget degrades that widget to
+``null`` with a 200 and leaves the others intact.
+
 The obligation-derived KPI/list are computed against a reference "today". That
 date is supplied by the :func:`get_reference_date` dependency (the server date by
 default) so tests can override it via ``app.dependency_overrides`` and assert the
@@ -13,7 +17,7 @@ aggregation deterministically.
 
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_business_central_client
@@ -22,7 +26,13 @@ from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
 from app.integrations.business_central.client import BusinessCentralClient
 
-from .schemas import DashboardSummary
+from .schemas import (
+    ActiveTotalKpi,
+    CountKpi,
+    CustomerBillingPage,
+    PendingTotalKpi,
+    ProjectObligationResponse,
+)
 from .service import DashboardService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -33,21 +43,69 @@ def get_reference_date() -> date:
     return date.today()
 
 
-@router.get("/summary", response_model=DashboardSummary)
-def get_summary(
+@router.get("/active-projects", response_model=ActiveTotalKpi | None)
+def get_active_projects(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+):
+    """Return the active and total projects count for the KPI tile."""
+    return DashboardService(db, bc_client).get_active_projects_kpi()
+
+
+@router.get("/active-customers", response_model=ActiveTotalKpi | None)
+def get_active_customers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+):
+    """Return the active and total customers count for the KPI tile."""
+    return DashboardService(db, bc_client).get_active_customers_kpi()
+
+
+@router.get("/pending-tasks", response_model=PendingTotalKpi | None)
+def get_pending_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+):
+    """Return the pending and total tasks count for the KPI tile."""
+    return DashboardService(db, bc_client).get_pending_tasks_kpi()
+
+
+@router.get("/upcoming-obligations-count", response_model=CountKpi | None)
+def get_upcoming_obligations_count(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
     reference_date: date = Depends(get_reference_date),
 ):
-    """Return the composed dashboard summary.
+    """Return how many obligations fall due inside the upcoming window."""
+    return DashboardService(db, bc_client).get_upcoming_obligations_kpi(reference_date)
 
-    Four firm-wide KPI tiles (proyectos activos, obligaciones próximas, tareas
-    pendientes, clientes activos), the "Próximas obligaciones" list
-    (upcoming/overdue instances across all projects, ordered by due date) and the
-    per-customer "Facturación" breakdown. Every number delegates to the
-    underlying customers/projects/obligations/billing services. A verified user
-    is still required (the summary itself is firm-wide, not user-scoped).
-    """
-    service = DashboardService(db, bc_client)
-    return service.build_summary(reference_date)
+
+@router.get("/obligations", response_model=list[ProjectObligationResponse] | None)
+def get_upcoming_obligations_list(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    reference_date: date = Depends(get_reference_date),
+):
+    """Return the upcoming and overdue obligations, ordered by due date."""
+    return DashboardService(db, bc_client).get_upcoming_obligations_list(reference_date)
+
+
+@router.get("/billing", response_model=CustomerBillingPage | None)
+def get_billing_summary(
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(10, ge=1, le=100, description="Customer groups per page"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+):
+    """Return one page of the per-customer billing breakdown (10 per page)."""
+
+    return DashboardService(db, bc_client).get_billing(page=page, page_size=page_size)
+
+
+

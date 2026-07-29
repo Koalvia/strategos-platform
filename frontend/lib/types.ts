@@ -192,9 +192,7 @@ export interface UserDirectoryEntry {
   activeTasks: number
 }
 
-// Dashboard summary. The landing screen is a pure aggregation view: the four KPI
-// tiles plus the "Próximas obligaciones" and "Mis tareas de hoy" lists all come
-// from a single GET /api/v1/dashboard/summary (see the dashboard domain).
+// --- Granular Dashboard KPI Schemas ---
 
 // A KPI tile showing how many of a total are currently active.
 export interface ActiveTotalKpi {
@@ -213,11 +211,7 @@ export interface CountKpi {
   count: number
 }
 
-// Billing, usage cost and logged hours for one project. snake_case ==
-// camelCase here, so this shape is shared by the API response and the frontend.
-// `cost`/`hours` are null when their Business Central source could not be read
-// (the entity may not be enabled on the tenant) — distinct from 0, which means
-// the project genuinely has no cost / no logged hours.
+// Billing, usage cost and logged hours for one project.
 export interface ProjectBilling {
   project_id: string
   project_name: string
@@ -226,10 +220,7 @@ export interface ProjectBilling {
   hours: number | null
 }
 
-// One customer with its per-project billing nested underneath — the row shape
-// of the dashboard's unified billing accordion. ``net_billed`` is the
-// authoritative per-customer net billing; ``cost``/``hours`` are rolled up from
-// ``projects``. snake_case == camelCase, so shared by API response and frontend.
+// One customer with its per-project billing nested underneath.
 export interface CustomerBillingGroup {
   customer_id: string
   customer_name: string
@@ -239,34 +230,20 @@ export interface CustomerBillingGroup {
   projects: ProjectBilling[]
 }
 
-// Backend API response type (from GET /api/v1/dashboard/summary). The two lists
-// reuse the obligations / tasks response shapes; the financial section reuses
-// the billing domain's shapes.
-//
-// Every section is nullable: null means "could not be loaded from Business
-// Central", a distinct state from an empty list or a zero count (which mean the
-// section loaded fine and there is genuinely nothing to show). The keys of the
-// sections that failed arrive in `unavailable_sections` so the UI can name them
-// instead of rendering a figure that isn't true.
-export interface DashboardSummaryResponse {
-  proyectos_activos: ActiveTotalKpi | null
-  obligaciones_proximas: CountKpi | null
-  tareas_pendientes: PendingTotalKpi | null
-  clientes_activos: ActiveTotalKpi | null
-  proximas_obligaciones: ProjectObligationResponse[] | null
-  facturacion: CustomerBillingGroup[] | null
-  unavailable_sections: string[]
+// Pagination envelope shared with the backend (app/core/schemas.py PageMeta).
+export interface PageMeta {
+  page: number
+  page_size: number
+  total_count: number
+  total_pages: number
+  has_next: boolean
+  has_prev: boolean
 }
 
-// Frontend type (camelCase for easier use in components)
-export interface DashboardSummary {
-  proyectosActivos: ActiveTotalKpi | null
-  obligacionesProximas: CountKpi | null
-  tareasPendientes: PendingTotalKpi | null
-  clientesActivos: ActiveTotalKpi | null
-  proximasObligaciones: ProjectObligation[] | null
-  facturacion: CustomerBillingGroup[] | null
-  unavailableSections: string[]
+// One page of the "Facturación" table, from GET /api/v1/dashboard/billing.
+export interface CustomerBillingPage {
+  items: CustomerBillingGroup[]
+  meta: PageMeta
 }
 
 export interface AuthResponse {
@@ -368,22 +345,4 @@ export function transformTaskResponse(backendTask: TaskResponse): Task {
   }
 }
 
-// Any section may arrive as null when Business Central could not serve it, so
-// every field is passed through defensively — mapping an absent list would throw
-// here and turn a usable partial summary into a blanket failure.
-export function transformDashboardSummaryResponse(
-  backendSummary: DashboardSummaryResponse,
-): DashboardSummary {
-  return {
-    proyectosActivos: backendSummary.proyectos_activos ?? null,
-    obligacionesProximas: backendSummary.obligaciones_proximas ?? null,
-    tareasPendientes: backendSummary.tareas_pendientes ?? null,
-    clientesActivos: backendSummary.clientes_activos ?? null,
-    proximasObligaciones:
-      backendSummary.proximas_obligaciones?.map(
-        transformProjectObligationResponse,
-      ) ?? null,
-    facturacion: backendSummary.facturacion ?? null,
-    unavailableSections: backendSummary.unavailable_sections ?? [],
-  }
-}
+
