@@ -59,9 +59,7 @@ def get_active_projects(
 
     duration = time.perf_counter() - start_time
     logger.info(
-        f"[Performance] GET /active-projects | start {start_hour} | took {duration:.2f}s",
-        flush=True,
-    )
+        f"[Performance] GET /active-projects | start {start_hour} | took {duration:.2f}s")
     return result
 
 
@@ -79,9 +77,7 @@ def get_active_customers(
 
     duration = time.perf_counter() - start_time
     logger.info(
-        f"[Performance] GET /active-customers | start {start_hour} | took {duration:.2f}s",
-        flush=True,
-    )
+        f"[Performance] GET /active-customers | start {start_hour} | took {duration:.2f}s")
     return result
 
 
@@ -99,9 +95,7 @@ def get_pending_tasks(
 
     duration = time.perf_counter() - start_time
     logger.info(
-        f"[Performance] GET /pending-tasks | start {start_hour} | took {duration:.2f}s",
-        flush=True,
-    )
+        f"[Performance] GET /pending-tasks | start {start_hour} | took {duration:.2f}s")
     return result
 
 
@@ -120,9 +114,7 @@ def get_upcoming_obligations_count(
 
     duration = time.perf_counter() - start_time
     logger.info(
-        f"[Performance] GET /upcoming-obligations-count | start {start_hour} | took {duration:.2f}s",
-        flush=True,
-    )
+        f"[Performance] GET /upcoming-obligations-count | start {start_hour} | took {duration:.2f}s")
     return result
 
 
@@ -141,9 +133,7 @@ def get_upcoming_obligations_list(
 
     duration = time.perf_counter() - start_time
     logger.info(
-        f"[Performance] GET /obligations | start {start_hour} | took {duration:.2f}s",
-        flush=True,
-    )
+        f"[Performance] GET /obligations | start {start_hour} | took {duration:.2f}s")
     return result
 
 
@@ -163,7 +153,5 @@ def get_billing_summary(
 
     duration = time.perf_counter() - start_time
     logger.info(
-        f"[Performance] GET /billing (page {page}) | start {start_hour} | took {duration:.2f}s",
-        flush=True,
-    )
+        f"[Performance] GET /billing (page {page}) | start {start_hour} | took {duration:.2f}s")
     return result
