@@ -1,10 +1,9 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { Loader2, TriangleAlert } from "lucide-react"
+import { useEffect, useState } from "react"
+import { TriangleAlert } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { authApi } from "@/features/auth/api"
 import { dashboardApi } from "@/features/dashboard/api"
 import { FacturacionResumen } from "@/features/dashboard/facturacion-resumen"
 import { UNAVAILABLE } from "@/features/dashboard/format"
@@ -67,6 +66,15 @@ interface DashboardSections {
   facturacion: CustomerBillingPage | null
 }
 
+interface LoadingSections {
+  proyectosActivos: boolean
+  obligacionesProximas: boolean
+  tareasPendientes: boolean
+  clientesActivos: boolean
+  proximasObligaciones: boolean
+  facturacion: boolean
+}
+
 // Resolve one widget to its payload, or to null when it could not be loaded.
 // A failed request and an unavailable Business Central source are the same thing
 // to the reader — both mean "this figure is unknown" — so both collapse to null
@@ -87,116 +95,91 @@ async function loadSection<T>(
 // Rebuild the list of unavailable sources the monolithic endpoint used to
 // report. Now that each widget has its own endpoint, a null payload *is* that
 // signal, so the notice is reconstructed here instead of being served.
-function unavailableSections(sections: DashboardSections): string[] {
+function unavailableSections(
+  sections: DashboardSections,
+  loading: LoadingSections
+): string[] {
   const missing: string[] = []
-  if (sections.clientesActivos === null) missing.push("customers")
-  if (sections.proyectosActivos === null) missing.push("projects")
-  if (sections.tareasPendientes === null) missing.push("tasks")
+  if (!loading.clientesActivos && sections.clientesActivos === null) missing.push("customers")
+  if (!loading.proyectosActivos && sections.proyectosActivos === null) missing.push("projects")
+  if (!loading.tareasPendientes && sections.tareasPendientes === null) missing.push("tasks")
   // Both obligation widgets read the same source, so they name it once.
   if (
-    sections.obligacionesProximas === null ||
-    sections.proximasObligaciones === null
+    !loading.obligacionesProximas &&
+    !loading.proximasObligaciones &&
+    (sections.obligacionesProximas === null || sections.proximasObligaciones === null)
   ) {
     missing.push("obligations")
   }
-  if (sections.facturacion === null) missing.push("billing")
+  if (!loading.facturacion && sections.facturacion === null) missing.push("billing")
   return missing
 }
 
 export default function DashboardPage() {
-  const [name, setName] = useState<string | null>(null)
-  const [sections, setSections] = useState<DashboardSections | null>(null)
-  // Why the panel is missing, when it is. Kept separate from `sections` so a
-  // failed load is distinguishable from a panel that legitimately has no data.
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [sections, setSections] = useState<DashboardSections>({
+    proyectosActivos: null,
+    obligacionesProximas: null,
+    tareasPendientes: null,
+    clientesActivos: null,
+    proximasObligaciones: null,
+    facturacion: null,
+  })
+  const [loading, setLoading] = useState<LoadingSections>({
+    proyectosActivos: true,
+    obligacionesProximas: true,
+    tareasPendientes: true,
+    clientesActivos: true,
+    proximasObligaciones: true,
+    facturacion: true,
+  })
+  // Paging billing hits Business Central for that page's customers, so it is not
+  // instant: the table reuses `loading.facturacion` to dim itself on a click.
   const [billingPage, setBillingPage] = useState(1)
-  // Paging billing hits Business Central for that page's customers, so the table
-  // needs its own in-flight flag — the panel-wide `loading` covers the first
-  // render only, and reusing it here would blank the whole dashboard on a click.
-  const [billingLoading, setBillingLoading] = useState(false)
   const [now] = useState(() => new Date())
 
   useEffect(() => {
     let active = true
-
-    const load = async () => {
-      setLoading(true)
-      // The six widget requests go out together — the point of splitting the
-      // old aggregated endpoint — and the panel renders once they have all
-      // answered, so it never appears half-drawn.
-      const [
-        userResult,
-        proyectosActivos,
-        obligacionesProximas,
-        tareasPendientes,
-        clientesActivos,
-        proximasObligaciones,
-        facturacion,
-      ] = await Promise.all([
-        authApi.getCurrentUser().catch((error) => {
-          console.error("[Strategos] Load current user error:", error)
-          return null
-        }),
-        loadSection(dashboardApi.getActiveProjects),
-        loadSection(dashboardApi.getUpcomingObligationsCount),
-        loadSection(dashboardApi.getPendingTasks),
-        loadSection(dashboardApi.getActiveCustomers),
-        loadSection(dashboardApi.getUpcomingObligationsList),
-        loadSection(() => dashboardApi.getBilling(1, BILLING_PAGE_SIZE)),
-      ])
-
-      if (!active) return
-
-      setName(userResult?.success ? (userResult.user?.name ?? null) : null)
-
-      const next: DashboardSections = {
-        proyectosActivos,
-        obligacionesProximas,
-        tareasPendientes,
-        clientesActivos,
-        proximasObligaciones,
-        facturacion,
-      }
-
-      // Every single widget failing points at the server or the session, not at
-      // six independent Business Central sources going down at once — so say so
-      // instead of listing all five as unavailable.
-      if (Object.values(next).every((value) => value === null)) {
-        setSections(null)
-        setError("No se ha podido cargar el resumen.")
-      } else {
-        setSections(next)
-        setError(null)
-      }
-      setLoading(false)
+    //Helper to refresh isolated widgets
+    const fetchWidget = <k extends keyof DashboardSections>(
+      key: k,
+      apiCall: () => Promise<ApiResponse<DashboardSections[k] | null>>
+    ) => {
+      loadSection(apiCall).then((data) => {
+        if (!active) return
+        setSections((prev) => ({ ...prev, [key]: data }))
+        setLoading((prev) => ({ ...prev, [key]: false }))
+      })
     }
 
-    load()
+    //independent widgets render
+    fetchWidget("proyectosActivos", dashboardApi.getActiveProjects)
+    fetchWidget("obligacionesProximas", dashboardApi.getUpcomingObligationsCount)
+    fetchWidget("tareasPendientes", dashboardApi.getPendingTasks)
+    fetchWidget("clientesActivos", dashboardApi.getActiveCustomers)
+    fetchWidget("proximasObligaciones", dashboardApi.getUpcomingObligationsList)
+    // Billing is deliberately absent here: the `billingPage` effect below owns
+    // it for both the first load and every page change. Fetching it in both
+    // places would issue two live Business Central reads for page 1.
+
     return () => {
       active = false
     }
   }, [])
 
-  // Paging the billing table refetches that widget alone, leaving the rest of
-  // the panel (and the initial spinner) untouched. The initial page already
-  // came with the first load, so the first run is skipped.
-  const isInitialBillingPage = useRef(true)
-  useEffect(() => {
-    if (isInitialBillingPage.current) {
-      isInitialBillingPage.current = false
-      return
-    }
+  // Billing table: initial load and pagination. Isolated from the widgets above
+  // so paging re-reads only this section.
 
+  useEffect(() => {
     let active = true
-    setBillingLoading(true)
+    setLoading((prev) => ({ ...prev, facturacion: true }))
+
     loadSection(() => dashboardApi.getBilling(billingPage, BILLING_PAGE_SIZE)).then(
       (facturacion) => {
         // Stale responses are dropped, so clicking through pages quickly cannot
         // land an earlier page on top of a later one.
         if (!active) return
-        setSections((prev) => (prev ? { ...prev, facturacion } : prev))
-        setBillingLoading(false)
+        setSections((prev) => ({ ...prev, facturacion }))
+        setLoading((prev) => ({ ...prev, facturacion: false }))
       },
     )
 
@@ -205,108 +188,93 @@ export default function DashboardPage() {
     }
   }, [billingPage])
 
-  // Greet by first name only ("Marc Solé" -> "Marc").
-  const firstName = name?.trim().split(/\s+/)[0]
   const greeting = getGreeting(now.getHours())
-  const missingSections = sections ? unavailableSections(sections) : []
+  const missingSections = unavailableSections(sections, loading)
+  const isAnyLoading = Object.values(loading).some(Boolean)
 
   return (
     <div className="px-8 py-8">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">
-          {greeting}
-          {firstName ? `, ${firstName}` : ""}
-        </h1>
+        <h1 className="text-2xl font-bold text-slate-900">{greeting}</h1>
         <p className="mt-1 text-sm text-slate-500">
           {formatToday(now)} · resumen de la asesoría
         </p>
       </div>
 
-      {loading ? (
-        <div className="mt-16 flex items-center justify-center">
-          <Loader2 className="size-8 animate-spin text-[#caa53d]" />
-        </div>
-      ) : !sections ? (
-        <div className="mt-8 flex min-h-60 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-6 text-center">
-          <p className="text-sm text-slate-500">
-            No se ha podido cargar el resumen.
-          </p>
-          {error && <p className="text-xs text-slate-400">{error}</p>}
-        </div>
-      ) : (
-        <>
-          {/* Some sections load while others don't (Business Central endpoints
-              fail independently). Name what is missing, so a "—" is never
-              mistaken for a real figure. */}
-          {missingSections.length > 0 && (
-            <Alert className="mt-6 border-amber-200 bg-amber-50 text-amber-900">
-              <TriangleAlert />
-              <AlertTitle>Información incompleta</AlertTitle>
-              <AlertDescription className="text-amber-800">
-                No se ha podido cargar desde Business Central:{" "}
-                {missingSections.map(sectionLabel).join(", ")}.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiTile
-              title="Proyectos activos"
-              value={sections.proyectosActivos?.active ?? UNAVAILABLE}
-              sublabel={
-                sections.proyectosActivos
-                  ? `de ${sections.proyectosActivos.total} totales`
-                  : KPI_UNAVAILABLE
-              }
-            />
-            <KpiTile
-              title="Obligaciones próximas"
-              value={sections.obligacionesProximas?.count ?? UNAVAILABLE}
-              sublabel={
-                sections.obligacionesProximas
-                  ? "en los próximos 7 días"
-                  : KPI_UNAVAILABLE
-              }
-              accent
-            />
-            <KpiTile
-              title="Tareas pendientes"
-              value={sections.tareasPendientes?.pending ?? UNAVAILABLE}
-              sublabel={
-                sections.tareasPendientes
-                  ? `${sections.tareasPendientes.total} totales`
-                  : KPI_UNAVAILABLE
-              }
-            />
-            <KpiTile
-              title="Clientes activos"
-              value={sections.clientesActivos?.active ?? UNAVAILABLE}
-              sublabel={
-                sections.clientesActivos
-                  ? `de ${sections.clientesActivos.total} totales`
-                  : KPI_UNAVAILABLE
-              }
-            />
-          </div>
-
-          {/* Unified financial table, sourced live from Business Central: each
-              customer groups its projects in an expandable accordion, paged so
-              the panel stays compact. Sits right below the KPI tiles for a
-              compact financial overview. */}
-          <div className="mt-6">
-            <FacturacionResumen
-              groups={sections.facturacion?.items ?? null}
-              meta={sections.facturacion?.meta ?? null}
-              onPageChange={setBillingPage}
-              isLoading={billingLoading}
-            />
-          </div>
-
-          <div className="mt-6">
-            <ProximasObligaciones obligations={sections.proximasObligaciones} />
-          </div>
-        </>
+      {/* . Pending widgets render their own placeholder. 
+       Some sections load while others don't (Business Central endpoints fail
+      independently). Held back until every widget has settled, so the notice
+          appears once, complete, rather than growing section by section. */}
+      {missingSections.length > 0 && !isAnyLoading && (
+        <Alert className="mt-6 border-amber-200 bg-amber-50 text-amber-900">
+          <TriangleAlert />
+          <AlertTitle>Información incompleta</AlertTitle>
+          <AlertDescription className="text-amber-800">
+            No se ha podido cargar desde Business Central:{" "}
+            {missingSections.map(sectionLabel).join(", ")}.
+          </AlertDescription>
+        </Alert>
       )}
+
+      <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiTile
+          title="Proyectos activos"
+          value={sections.proyectosActivos?.active ?? UNAVAILABLE}
+          sublabel={
+            sections.proyectosActivos
+              ? `de ${sections.proyectosActivos.total} totales`
+              : KPI_UNAVAILABLE
+          }
+          isLoading={loading.proyectosActivos}
+        />
+        <KpiTile
+          title="Obligaciones próximas"
+          value={sections.obligacionesProximas?.count ?? UNAVAILABLE}
+          sublabel={
+            sections.obligacionesProximas
+              ? "en los próximos 7 días"
+              : KPI_UNAVAILABLE
+          }
+          accent
+          isLoading={loading.obligacionesProximas}
+        />
+        <KpiTile
+          title="Tareas pendientes"
+          value={sections.tareasPendientes?.pending ?? UNAVAILABLE}
+          sublabel={
+            sections.tareasPendientes
+              ? `${sections.tareasPendientes.total} totales`
+              : KPI_UNAVAILABLE
+          }
+          isLoading={loading.tareasPendientes}
+        />
+        <KpiTile
+          title="Clientes activos"
+          value={sections.clientesActivos?.active ?? UNAVAILABLE}
+          sublabel={
+            sections.clientesActivos
+              ? `de ${sections.clientesActivos.total} totales`
+              : KPI_UNAVAILABLE
+          }
+          isLoading={loading.clientesActivos}
+        />
+      </div>
+
+      <div className="mt-6">
+        <FacturacionResumen
+          groups={sections.facturacion?.items ?? null}
+          meta={sections.facturacion?.meta ?? null}
+          onPageChange={setBillingPage}
+          isLoading={loading.facturacion}
+        />
+      </div>
+
+      <div className="mt-6">
+        <ProximasObligaciones
+          obligations={sections.proximasObligaciones}
+          isLoading={loading.proximasObligaciones}
+        />
+      </div>
     </div>
   )
 }

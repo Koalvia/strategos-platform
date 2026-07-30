@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -20,6 +21,8 @@ import { formatEuro, formatHours } from "./format"
 const HEAD_CLASS = "text-xs font-semibold uppercase tracking-wide text-slate-500"
 // Right-aligned, tabular figures so decimals line up and widths don't jump.
 const NUM_CLASS = "px-6 py-3 text-right tabular-nums"
+// Placeholder rows shown on the first load, before the page size is known.
+const SKELETON_ROWS = 5
 
 interface FacturacionResumenProps {
   // null when Business Central could not serve this section — rendered as an
@@ -31,7 +34,9 @@ interface FacturacionResumenProps {
   meta: PageMeta | null
   onPageChange: (page: number) => void
   // True while a page is being fetched. Each page is a fresh Business Central
-  // read, so a click is not instant and needs to look like it registered.
+  // read, so a click is not instant and needs to look like it registered. On the
+  // first load `groups` is still null, which is why this is checked before the
+  // "unavailable" branch — otherwise loading would look like a failure.
   isLoading?: boolean
 }
 
@@ -73,7 +78,34 @@ export function FacturacionResumen({
       <h2 className="border-b border-slate-100 px-6 py-5 text-lg font-bold text-slate-900">
         Facturación
       </h2>
-      {groups === null ? (
+      {isLoading && groups === null ? (
+        // First load: real column headers over placeholder rows, so the columns
+        // settle at their final widths before any figure arrives.
+        <Table aria-busy>
+          <FacturacionHead />
+          <TableBody>
+            {Array.from({ length: SKELETON_ROWS }, (_, index) => (
+              <TableRow key={index} className="border-slate-100 hover:bg-transparent">
+                <TableCell className="px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <span className="size-4 shrink-0" aria-hidden />
+                    <Skeleton className="h-4 w-48" />
+                  </div>
+                </TableCell>
+                <TableCell className={cn(NUM_CLASS, "py-4")}>
+                  <Skeleton className="ml-auto h-4 w-20" />
+                </TableCell>
+                <TableCell className={cn(NUM_CLASS, "py-4")}>
+                  <Skeleton className="ml-auto h-4 w-20" />
+                </TableCell>
+                <TableCell className={cn(NUM_CLASS, "py-4")}>
+                  <Skeleton className="ml-auto h-4 w-12" />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ) : groups === null ? (
         <p className="px-6 py-12 text-center text-sm text-slate-500">
           No se ha podido cargar la facturación desde Business Central.
         </p>
@@ -91,22 +123,7 @@ export function FacturacionResumen({
           )}
           aria-busy={isLoading}
         >
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>
-                Cliente / Proyecto
-              </TableHead>
-              <TableHead className={cn(HEAD_CLASS, "px-6 py-4 text-right")}>
-                Facturación
-              </TableHead>
-              <TableHead className={cn(HEAD_CLASS, "px-6 py-4 text-right")}>
-                Coste
-              </TableHead>
-              <TableHead className={cn(HEAD_CLASS, "px-6 py-4 text-right")}>
-                Horas
-              </TableHead>
-            </TableRow>
-          </TableHeader>
+          <FacturacionHead />
           <TableBody>
             {groups.map((group) => {
               const isOpen = expanded.has(group.customer_id)
@@ -154,6 +171,29 @@ export function FacturacionResumen({
         </div>
       )}
     </Card>
+  )
+}
+
+// Shared by the loaded table and its loading placeholder, so both reserve the
+// same column widths.
+function FacturacionHead() {
+  return (
+    <TableHeader>
+      <TableRow className="hover:bg-transparent">
+        <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>
+          Cliente / Proyecto
+        </TableHead>
+        <TableHead className={cn(HEAD_CLASS, "px-6 py-4 text-right")}>
+          Facturación
+        </TableHead>
+        <TableHead className={cn(HEAD_CLASS, "px-6 py-4 text-right")}>
+          Coste
+        </TableHead>
+        <TableHead className={cn(HEAD_CLASS, "px-6 py-4 text-right")}>
+          Horas
+        </TableHead>
+      </TableRow>
+    </TableHeader>
   )
 }
 
