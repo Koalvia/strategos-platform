@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { type Dispatch, type SetStateAction, useEffect, useState } from "react"
 
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -13,49 +12,45 @@ import {
 } from "@/components/ui/select"
 import { obligationsApi } from "@/features/obligations/api"
 import { ObligationsTable } from "@/features/obligations/obligations-table"
-import type { ObligationStatus, ProjectObligation } from "@/lib/types"
+import type {
+  ObligationProjectOption,
+  ObligationStatus,
+  PageMeta,
+  ProjectObligation,
+} from "@/lib/types"
 
 const ALL = "all"
-const STATUS_OPTIONS: ObligationStatus[] = ["Vencido", "Próximo", "Al día", "Sin fecha"]
+const STATUS_OPTIONS: ObligationStatus[] = ["Vencido", "Al día", "Sin fecha"]
+
+// Rows per page. A module constant rather than state: this screen has no
+// rows-per-page selector, so it never needs to be reactive.
+const PAGE_SIZE = 10
 
 type StatusFilter = typeof ALL | ObligationStatus
 
 export default function ObligacionesPage() {
   const [status, setStatus] = useState<StatusFilter>(ALL)
   const [projectId, setProjectId] = useState(ALL)
-  const [dueAfter, setDueAfter] = useState("")
-  const [dueBefore, setDueBefore] = useState("")
+  const [page, setPage] = useState(1)
   const [obligations, setObligations] = useState<ProjectObligation[]>([])
+  const [meta, setMeta] = useState<PageMeta | null>(null)
   const [loading, setLoading] = useState(true)
-
-  // Project filter options come from a one-time unfiltered fetch so narrowing
-  // the list never shrinks the option list.
-  const [allObligations, setAllObligations] = useState<ProjectObligation[]>([])
-
-  const projectOptions = useMemo(() => {
-    const byId = new Map<string, string>()
-    for (const obligation of allObligations) {
-      byId.set(obligation.project.id, obligation.project.name)
-    }
-    return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    )
-  }, [allObligations])
+  const [projectOptions, setProjectOptions] = useState<ObligationProjectOption[]>([])
 
   useEffect(() => {
     let active = true
 
-    const loadOnce = async () => {
+    const loadProjectOptions = async () => {
       try {
-        const result = await obligationsApi.getObligations()
+        const result = await obligationsApi.getProjectOptions()
         if (!active) return
-        setAllObligations(result.success && result.data ? result.data : [])
+        setProjectOptions(result.success && result.data ? result.data : [])
       } catch (error) {
-        console.error("[Strategos] Load obligations metadata error:", error)
+        console.error("[Strategos] Load project options error:", error)
       }
     }
 
-    loadOnce()
+    loadProjectOptions()
     return () => {
       active = false
     }
@@ -68,16 +63,22 @@ export default function ObligacionesPage() {
       setLoading(true)
       try {
         const result = await obligationsApi.getObligations({
+          page,
+          pageSize: PAGE_SIZE,
           status: status === ALL ? undefined : status,
           projectId: projectId === ALL ? undefined : projectId,
-          dueAfter: dueAfter || undefined,
-          dueBefore: dueBefore || undefined,
         })
         if (!active) return
         setObligations(result.success && result.data ? result.data : [])
+        setMeta(result.success && result.meta ? result.meta : null)
       } catch (error) {
         console.error("[Strategos] Load obligations error:", error)
-        if (active) setObligations([])
+        if (active) {
+          // Both, together: a stale meta over an empty table would paint a
+          // pagination footer contradicting what is on screen.
+          setObligations([])
+          setMeta(null)
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -87,7 +88,14 @@ export default function ObligacionesPage() {
     return () => {
       active = false
     }
-  }, [status, projectId, dueAfter, dueBefore])
+  }, [page, status, projectId])
+
+  // Any filter change goes back to page 1: page 3 of a shorter new result set
+  // would show an empty table while matching rows exist.
+  const handleFilterChange = <T,>(setter: Dispatch<SetStateAction<T>>, value: T) => {
+    setter(value)
+    setPage(1)
+  }
 
   return (
     <div className="px-8 py-8">
@@ -96,7 +104,12 @@ export default function ObligacionesPage() {
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs font-medium text-slate-500">Estado</Label>
-          <Select value={status} onValueChange={(value) => setStatus(value as StatusFilter)}>
+          <Select
+            value={status}
+            onValueChange={(value) =>
+              handleFilterChange(setStatus, value as StatusFilter)
+            }
+          >
             <SelectTrigger className="h-11 bg-white sm:w-44">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
@@ -113,7 +126,10 @@ export default function ObligacionesPage() {
 
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs font-medium text-slate-500">Proyecto</Label>
-          <Select value={projectId} onValueChange={setProjectId}>
+          <Select
+            value={projectId}
+            onValueChange={(value) => handleFilterChange(setProjectId, value)}
+          >
             <SelectTrigger className="h-11 bg-white sm:w-64">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
@@ -127,30 +143,15 @@ export default function ObligacionesPage() {
             </SelectContent>
           </Select>
         </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-medium text-slate-500">Desde</Label>
-          <Input
-            type="date"
-            value={dueAfter}
-            onChange={(event) => setDueAfter(event.target.value)}
-            className="h-11 bg-white sm:w-44"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-medium text-slate-500">Hasta</Label>
-          <Input
-            type="date"
-            value={dueBefore}
-            onChange={(event) => setDueBefore(event.target.value)}
-            className="h-11 bg-white sm:w-44"
-          />
-        </div>
       </div>
 
       <div className="mt-6">
-        <ObligationsTable obligations={obligations} loading={loading} />
+        <ObligationsTable
+          obligations={obligations}
+          loading={loading}
+          meta={meta}
+          onPageChange={setPage}
+        />
       </div>
     </div>
   )

@@ -481,9 +481,11 @@ def test_obligaciones_proximas_counts_upcoming_within_window(frozen_client):
     """
     app.dependency_overrides[obligations_reference_date] = lambda: FROZEN_TODAY
     try:
+        # The obligations endpoint answers with the {items, meta} envelope; the
+        # dashboard's own routes still return bare lists.
         upcoming = frozen_client.get(
             OBLIGATIONS_URL, params={"status": "Próximo"}
-        ).json()
+        ).json()["items"]
     finally:
         app.dependency_overrides.pop(obligations_reference_date, None)
     kpi = frozen_client.get(UPCOMING_COUNT_URL).json()

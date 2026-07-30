@@ -7,7 +7,13 @@ The domain has no database model — obligations are served from the fixture-bac
 * the per-project instance mapping (obligation / project / client names),
 * the **derived status** (``derive_status``) asserted against a frozen reference
   date for each of Vencido / Próximo / Al día (including a filed instance),
-* the ``status`` / ``project_id`` / date-range filters and due-date ordering, and
+* the ``status`` / ``project_id`` / date-range filters and due-date ordering,
+* the ``{items, meta}`` pagination envelope (slicing, the real total behind a
+  page, out-of-range windows, and that omitting ``page_size`` still returns the
+  complete list),
+* the ``/projects`` filter-option endpoint,
+* the **Business Central read cost**: which reads a request is allowed to make,
+  so the expensive ones cannot creep back in, and
 * that the endpoints reject unauthenticated requests.
 
 The instance endpoint derives status against a reference "today". Tests freeze it
@@ -15,6 +21,7 @@ by overriding the ``get_reference_date`` dependency so assertions do not depend 
 the real clock.
 """
 
+from collections import Counter
 from datetime import date
 
 import pytest
@@ -25,6 +32,7 @@ from app.domains.obligations.router import get_reference_date
 from app.domains.obligations.schemas import DerivedObligationStatus
 from app.domains.obligations.service import ObligationsService, derive_status
 from app.integrations.business_central.client import BusinessCentralClient
+from app.integrations.business_central.mock_client import MockBusinessCentralClient
 from app.integrations.business_central.models import (
     BCCustomer,
     BCCustomerPage,
@@ -41,11 +49,27 @@ from app.main import app
 
 CATALOG_URL = "/api/v1/obligations/catalog"
 OBLIGATIONS_URL = "/api/v1/obligations"
+PROJECT_OPTIONS_URL = "/api/v1/obligations/projects"
 
 # A fixed "today" the fixtures are laid out around: pobl-001 (filed) is well past
 # due, pobl-002..005 are overdue, several fall inside the 7-day window, and
 # pobl-012 (2026-10-31) is far in the future.
 FROZEN_TODAY = date(2026, 7, 1)
+
+
+PAGE_META_KEYS = {
+    "page",
+    "page_size",
+    "total_count",
+    "total_pages",
+    "has_next",
+    "has_prev",
+}
+
+
+def _items(resp) -> list[dict]:
+    """The instance rows out of the paginated response envelope."""
+    return resp.json()["items"]
 
 
 @pytest.fixture
@@ -142,7 +166,7 @@ def test_instance_mapping_includes_obligation_project_client_names(frozen_client
     """Each instance resolves the obligation, project and client display names."""
     resp = frozen_client.get(OBLIGATIONS_URL)
     assert resp.status_code == 200
-    row = next(o for o in resp.json() if o["id"] == "pobl-002")
+    row = next(o for o in _items(resp) if o["id"] == "pobl-002")
     assert set(row) == {
         "id",
         "obligation",
@@ -167,7 +191,7 @@ def test_derived_status_across_endpoint(frozen_client):
     """The endpoint derives Vencido / Próximo / Al día for the frozen date."""
     resp = frozen_client.get(OBLIGATIONS_URL)
     assert resp.status_code == 200
-    status_by_id = {o["id"]: o["status"] for o in resp.json()}
+    status_by_id = {o["id"]: o["status"] for o in _items(resp)}
     # Filed, though past due.
     assert status_by_id["pobl-001"] == "Al día"
     # Unfiled and past due.
@@ -183,7 +207,7 @@ def test_results_ordered_by_due_date(frozen_client):
     """Instances come back ordered by due date ascending."""
     resp = frozen_client.get(OBLIGATIONS_URL)
     assert resp.status_code == 200
-    due_dates = [o["due_date"] for o in resp.json()]
+    due_dates = [o["due_date"] for o in _items(resp)]
     assert due_dates == sorted(due_dates)
 
 
@@ -192,7 +216,7 @@ def test_status_filter(frozen_client):
     """?status= keeps only instances in that derived state."""
     resp = frozen_client.get(OBLIGATIONS_URL, params={"status": "Vencido"})
     assert resp.status_code == 200
-    body = resp.json()
+    body = _items(resp)
     assert {o["status"] for o in body} == {"Vencido"}
     # pobl-002..005 are overdue; pobl-001 is filed so it drops out.
     assert {o["id"] for o in body} == {"pobl-002", "pobl-003", "pobl-004", "pobl-005"}
@@ -203,7 +227,7 @@ def test_project_id_filter(frozen_client):
     """?project_id= restricts to a single project's obligations."""
     resp = frozen_client.get(OBLIGATIONS_URL, params={"project_id": "proj-012"})
     assert resp.status_code == 200
-    body = resp.json()
+    body = _items(resp)
     assert {o["project"]["id"] for o in body} == {"proj-012"}
     assert {o["id"] for o in body} == {"pobl-003", "pobl-005"}
 
@@ -216,7 +240,7 @@ def test_due_date_range_filter(frozen_client):
         params={"due_after": "2026-06-20", "due_before": "2026-07-05"},
     )
     assert resp.status_code == 200
-    body = resp.json()
+    body = _items(resp)
     assert {o["id"] for o in body} == {
         "pobl-002",
         "pobl-003",
@@ -236,7 +260,7 @@ def test_filters_compose(frozen_client):
         params={"status": "Vencido", "project_id": "proj-012"},
     )
     assert resp.status_code == 200
-    assert {o["id"] for o in resp.json()} == {"pobl-003", "pobl-005"}
+    assert {o["id"] for o in _items(resp)} == {"pobl-003", "pobl-005"}
 
 
 @pytest.mark.integration
@@ -245,7 +269,7 @@ def test_due_before_only_bound(frozen_client):
     resp = frozen_client.get(OBLIGATIONS_URL, params={"due_before": "2026-06-30"})
     assert resp.status_code == 200
     # Only the June-due instances (pobl-001..005); July onwards is excluded.
-    assert {o["id"] for o in resp.json()} == {
+    assert {o["id"] for o in _items(resp)} == {
         "pobl-001",
         "pobl-002",
         "pobl-003",
@@ -259,14 +283,14 @@ def test_generated_instances_derive_on_track(frozen_client):
     """The generated far-future instances (pobl-013..018) are Al día, never overdue/upcoming."""
     generated = {f"pobl-{n:03d}" for n in range(13, 19)}
 
-    on_track = frozen_client.get(
-        OBLIGATIONS_URL, params={"status": "Al día"}
-    ).json()
+    on_track = _items(
+        frozen_client.get(OBLIGATIONS_URL, params={"status": "Al día"})
+    )
     assert generated <= {o["id"] for o in on_track}
 
     # None of them fall in the overdue or upcoming buckets.
     for status in ("Vencido", "Próximo"):
-        got = frozen_client.get(OBLIGATIONS_URL, params={"status": status}).json()
+        got = _items(frozen_client.get(OBLIGATIONS_URL, params={"status": status}))
         assert generated.isdisjoint({o["id"] for o in got})
 
 
@@ -288,7 +312,9 @@ def test_generated_instance_mapping(frozen_client):
         o for o in bc.get_obligations() if o.id == instance.obligation_id
     )
 
-    row = next(o for o in frozen_client.get(OBLIGATIONS_URL).json() if o["id"] == "pobl-018")
+    row = next(
+        o for o in _items(frozen_client.get(OBLIGATIONS_URL)) if o["id"] == "pobl-018"
+    )
     assert row["status"] == "Al día"
     assert row["project"] == {"id": project.id, "name": project.name}
     assert row["client"] == {"id": customer.id, "name": customer.name}
@@ -300,6 +326,257 @@ def test_invalid_status_is_rejected(client):
     """An unknown status value is rejected by validation (422)."""
     resp = client.get(OBLIGATIONS_URL, params={"status": "Bogus"})
     assert resp.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Pagination
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.integration
+def test_unpaged_request_returns_every_match_in_one_page(frozen_client):
+    """Without page_size the whole result set comes back in a single page.
+
+    This is the contract the projects grid and the project detail screen depend
+    on, so it is asserted rather than assumed.
+    """
+    resp = frozen_client.get(OBLIGATIONS_URL)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body) == {"items", "meta"}
+
+    meta = body["meta"]
+    assert set(meta) == PAGE_META_KEYS
+    total = meta["total_count"]
+    # The fixtures must exceed one page for the paging tests below to bite.
+    assert total > 10
+    assert len(body["items"]) == total
+    assert meta["page"] == 1
+    assert meta["page_size"] == total
+    assert meta["total_pages"] == 1
+    assert meta["has_next"] is False
+    assert meta["has_prev"] is False
+
+
+@pytest.mark.integration
+def test_page_is_ignored_when_page_size_is_omitted(frozen_client):
+    """?page= alone cannot shrink an unpaged response."""
+    unpaged = frozen_client.get(OBLIGATIONS_URL).json()
+    resp = frozen_client.get(OBLIGATIONS_URL, params={"page": 3})
+    assert resp.status_code == 200
+    assert resp.json() == unpaged
+
+
+@pytest.mark.integration
+def test_page_size_slices_and_reports_the_real_total(frozen_client):
+    """page_size serves that many rows while meta keeps the unsliced total."""
+    total = frozen_client.get(OBLIGATIONS_URL).json()["meta"]["total_count"]
+
+    resp = frozen_client.get(OBLIGATIONS_URL, params={"page_size": 5})
+    assert resp.status_code == 200
+    meta = resp.json()["meta"]
+    assert len(_items(resp)) == 5
+    assert meta["total_count"] == total
+    assert meta["total_pages"] == -(-total // 5)  # ceil
+    assert meta["has_next"] is True
+    assert meta["has_prev"] is False
+
+
+@pytest.mark.integration
+def test_pages_partition_the_result_in_due_date_order(frozen_client):
+    """Consecutive pages are consecutive slices of the same ordered list."""
+    ordered = [o["id"] for o in _items(frozen_client.get(OBLIGATIONS_URL))]
+
+    first = _items(frozen_client.get(OBLIGATIONS_URL, params={"page_size": 5}))
+    second = _items(
+        frozen_client.get(OBLIGATIONS_URL, params={"page": 2, "page_size": 5})
+    )
+
+    assert [o["id"] for o in first] == ordered[:5]
+    assert [o["id"] for o in second] == ordered[5:10]
+    # Nothing is lost or repeated across the page boundary.
+    assert set(o["id"] for o in first).isdisjoint(o["id"] for o in second)
+
+
+@pytest.mark.integration
+def test_page_past_the_end_is_empty_but_keeps_the_meta(frozen_client):
+    """A page beyond the last one is an empty 200, not an error."""
+    resp = frozen_client.get(OBLIGATIONS_URL, params={"page": 99, "page_size": 5})
+    assert resp.status_code == 200
+    assert _items(resp) == []
+    meta = resp.json()["meta"]
+    assert meta["page"] == 99
+    assert meta["total_count"] > 0
+    assert meta["has_next"] is False
+    assert meta["has_prev"] is True
+
+
+@pytest.mark.integration
+def test_total_count_is_computed_after_status_filtering(frozen_client):
+    """The page is cut out of the filtered result, and the total reflects it."""
+    resp = frozen_client.get(
+        OBLIGATIONS_URL, params={"status": "Vencido", "page_size": 2}
+    )
+    assert resp.status_code == 200
+    meta = resp.json()["meta"]
+    # pobl-002..005 are the four overdue instances.
+    assert meta["total_count"] == 4
+    assert meta["total_pages"] == 2
+    assert len(_items(resp)) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"page": 0},
+        {"page": -1},
+        {"page_size": 0},
+        {"page_size": 101},
+    ],
+)
+def test_out_of_range_pagination_params_are_rejected(frozen_client, params):
+    """FastAPI rejects out-of-range page windows before the service runs."""
+    assert frozen_client.get(OBLIGATIONS_URL, params=params).status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Project filter options
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.integration
+def test_project_options_are_the_distinct_projects_with_obligations(frozen_client):
+    """/projects lists each project that has obligations exactly once, by name."""
+    resp = frozen_client.get(PROJECT_OPTIONS_URL)
+    assert resp.status_code == 200
+    body = resp.json()
+
+    instance_project_ids = {
+        o["project"]["id"] for o in _items(frozen_client.get(OBLIGATIONS_URL))
+    }
+    assert {p["id"] for p in body} == instance_project_ids
+    assert len(body) == len(instance_project_ids)
+    assert set(body[0]) == {"id", "name"}
+    assert [p["name"] for p in body] == sorted(p["name"] for p in body)
+    # Names are resolved, not left blank.
+    assert all(p["name"] for p in body)
+
+
+# --------------------------------------------------------------------------- #
+# Business Central read cost
+#
+# The reads below are the whole point of the listing's read order. Measured
+# against the live tenant, ``get_customers()`` cost 2.24s (789 rows, plus a second
+# company-wide projects sweep it does internally for a field this domain never
+# reads) out of a 3.7s request. These tests fail if it comes back.
+# --------------------------------------------------------------------------- #
+
+
+class _CountingBCClient:
+    """Wraps a BC client, counting how many times each getter is called."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.calls: Counter[str] = Counter()
+        self.customer_name_ids: list[list[str]] = []
+
+    def __getattr__(self, name):
+        attr = getattr(self._inner, name)
+        if not callable(attr):
+            return attr
+
+        def wrapped(*args, **kwargs):
+            self.calls[name] += 1
+            if name == "get_customer_names":
+                self.customer_name_ids.append(list(args[0] if args else kwargs["customer_ids"]))
+            return attr(*args, **kwargs)
+
+        return wrapped
+
+
+def _counting_service(db_session):
+    bc = _CountingBCClient(MockBusinessCentralClient())
+    return ObligationsService(db_session, bc), bc
+
+
+@pytest.mark.integration
+def test_listing_resolves_client_names_without_reading_every_customer(db_session):
+    """Client names come from the scoped read, never from get_customers()."""
+    service, bc = _counting_service(db_session)
+
+    rows = service.list_project_obligations(reference_date=FROZEN_TODAY)
+
+    assert bc.calls["get_customers"] == 0
+    assert bc.calls["get_customer_names"] == 1
+    # The names still resolve — the cheap read is not a downgrade.
+    assert all(r.client.name for r in rows)
+
+
+@pytest.mark.integration
+def test_listing_asks_only_for_the_customers_it_mentions(db_session):
+    """The scoped read receives the referenced customer ids and nothing else."""
+    service, bc = _counting_service(db_session)
+
+    rows = service.list_project_obligations(reference_date=FROZEN_TODAY)
+
+    expected = sorted({r.client.id for r in rows if r.client.id})
+    assert bc.customer_name_ids == [expected]
+    # Blank ids are dropped rather than sent as a wasted filter clause.
+    assert "" not in bc.customer_name_ids[0]
+
+
+@pytest.mark.integration
+def test_project_filter_narrows_the_customer_read_too(db_session):
+    """Filtering to one project asks for that project's customer only."""
+    service, bc = _counting_service(db_session)
+
+    service.list_project_obligations(
+        reference_date=FROZEN_TODAY, project_id="proj-012"
+    )
+
+    assert bc.calls["get_customers"] == 0
+    assert len(bc.customer_name_ids[0]) == 1
+
+
+@pytest.mark.integration
+def test_a_filter_matching_nothing_skips_every_enrichment_read(db_session):
+    """No surviving instances means no catalog, projects or customers read at all."""
+    service, bc = _counting_service(db_session)
+
+    assert service.list_project_obligations(
+        reference_date=FROZEN_TODAY, project_id="no-such-project"
+    ) == []
+
+    assert bc.calls["get_project_obligations"] == 1
+    assert bc.calls["get_obligations"] == 0
+    assert bc.calls["get_projects"] == 0
+    assert bc.calls["get_customer_names"] == 0
+
+
+@pytest.mark.integration
+def test_project_options_read_only_the_two_cheap_sources(db_session):
+    """The filter options need the links and the projects — nothing else."""
+    service, bc = _counting_service(db_session)
+
+    assert service.list_obligation_projects()
+
+    assert bc.calls["get_project_obligations"] == 1
+    assert bc.calls["get_projects"] == 1
+    assert bc.calls["get_obligations"] == 0
+    assert bc.calls["get_customers"] == 0
+    assert bc.calls["get_customer_names"] == 0
+
+
+@pytest.mark.integration
+def test_project_options_are_empty_without_touching_projects(db_session):
+    """With no obligation links there is nothing to name, so projects is not read."""
+    bc = _CountingBCClient(MockBusinessCentralClient())
+    bc._inner.get_project_obligations = lambda: []
+    service = ObligationsService(db_session, bc)
+
+    assert service.list_obligation_projects() == []
+    assert bc.calls["get_projects"] == 0
 
 
 # --------------------------------------------------------------------------- #
