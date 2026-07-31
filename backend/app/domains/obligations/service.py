@@ -52,12 +52,6 @@ def derive_status(
     upcoming_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
 ) -> DerivedObligationStatus:
     """Derive an obligation's due state relative to ``reference_date``.
-
-    * An instance with no ``due_date`` is ``Sin fecha`` (undated): it cannot be
-      placed on the calendar, so it is excluded from the overdue/upcoming/on-track
-      partitioning. The live BC ``projectObligation`` link carries no dates yet,
-      so today this is effectively every live instance (expected, not a bug).
-    * A filed instance (``submission_date`` set) is always ``Al día``.
     * An unfiled instance whose ``due_date`` is before the reference date is
       ``Vencido`` (overdue).
     * An unfiled instance due within ``upcoming_within_days`` (inclusive) of the
@@ -104,28 +98,17 @@ class ObligationsService:
         upcoming_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
     ) -> list[ProjectObligationResponse]:
         """Return per-project obligation instances, filtered and ordered by due date.
-
-        ``status`` keeps only instances in that derived state; ``project_id``
-        restricts to a single project; ``due_after`` / ``due_before`` bound the
-        due date (both inclusive). Filters compose. Results are ordered by
-        ``due_date`` ascending, with undated (``due_date is None``) instances
-        sorted last. Undated instances never match a ``due_after`` / ``due_before``
-        bound.
+        Filters compose. Results are ordered by ``due_date`` ascending, with undated
+        (``due_date is None``) instances sorted last.
 
         **The order of the Business Central reads below is deliberate — do not
         reshuffle it.** The instance link table is read *first* because it is by
         far the cheapest read (measured at 0.09s against the live tenant) and it
         is the only one that says which projects and customers this response
-        actually mentions. Everything after it is enrichment scoped to that
-        answer: no filter matches, nothing else is read at all.
+        actually mentions.
 
         In particular, resolving client names goes through
-        ``get_customer_names(ids)`` and **never** ``get_customers()``. The latter
-        measured 2.24s because it returns all 789 customers *and* internally
-        re-reads every project company-wide to compute ``active_project_count``,
-        a field this domain does not use — the same trap already flagged in
-        ``app/domains/alerts/tasks.py``.
-        """
+        ``get_customer_names(ids)`` and **never** ``get_customers()``."""
         instances = self.bc_client.get_project_obligations()
         if project_id is not None:
             instances = [i for i in instances if i.project_id == project_id]
