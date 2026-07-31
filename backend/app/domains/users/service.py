@@ -2,8 +2,10 @@
 
 Identity is 100% local this round, so the directory lists the local
 ``auth.User`` rows (name, role, email) and does **not** consume BC ``/users`` for
-identity. The only Business Central read here is ``userTasks``, used to compute
-each user's active-task load: the count of their non-"Hecho" (not-done) tasks.
+identity. Business Central is read for ``userTasks`` (each user's active-task
+load: the count of their non-"Hecho" tasks) and for ``userSetups``, whose
+``manageAllCustomers`` flag decides whether the caller sees the whole directory
+or only their own entry.
 
 Each local user is mapped to their BC assignee by **email** (case-insensitive),
 mirroring the tasks domain; a user with no matching BC user simply shows 0 active
@@ -13,6 +15,7 @@ directory, the numbers reflect whatever the mock BC data holds.
 
 from sqlalchemy.orm import Session
 
+from app import logger
 from app.domains.auth.models import User
 from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import TaskStatus
@@ -27,14 +30,20 @@ class UsersService:
         self.db = db
         self.bc_client = bc_client
 
-    def list_directory(self) -> list[UserDirectoryEntry]:
-        """Return every local user with name, role, email and active-task count.
+    def list_directory(self, current_user: User) -> list[UserDirectoryEntry]:
+        """Return the directory as ``current_user`` is allowed to see it.
 
-        Users are returned in insertion order (by id) so the list matches the
-        Usuarios mock's ordering.
+        A user whose BC setup has ``manageAllCustomers`` set sees every local
+        user, in insertion order (by id) so the list matches the Usuarios mock's
+        ordering; anyone else sees only their own entry.
         """
         active_by_email = self._active_tasks_by_email()
         users = self.db.query(User).order_by(User.id.asc()).all()
+
+        if not self._manage_all_customers(current_user):
+            own_email = (current_user.email or "").casefold()
+            users = [u for u in users if (u.email or "").casefold() == own_email]
+
         return [
             UserDirectoryEntry(
                 name=user.name,
@@ -44,6 +53,39 @@ class UsersService:
             )
             for user in users
         ]
+
+    def _manage_all_customers(self, user: User) -> bool:
+        """Whether ``user``'s BC setup grants them the full directory.
+
+        Resolves local user → BC user (by email) → BC user setup (by the BC User
+        ID code). Any unresolved hop is logged and denies the permission, so a
+        missing setup or a BC outage restricts rather than over-shares.
+        """
+        email = (user.email or "").casefold()
+        bc_user = next(
+            (u for u in self.bc_client.get_users() if u.email.casefold() == email),
+            None,
+        )
+        if bc_user is None or not bc_user.user_name:
+            logger.warning(
+                "No Business Central user matches %s; denying manageAllCustomers",
+                user.email,
+            )
+            return False
+
+        code = bc_user.user_name.casefold()
+        setup = next(
+            (s for s in self.bc_client.get_user_setups() if s.user_id.casefold() == code),
+            None,
+        )
+        if setup is None:
+            logger.warning(
+                "No Business Central user setup for %s; denying manageAllCustomers",
+                bc_user.user_name,
+            )
+            return False
+
+        return setup.manage_all_customers
 
     def _active_tasks_by_email(self) -> dict[str, int]:
         """Map each BC user's email (case-folded) to their non-done task count."""

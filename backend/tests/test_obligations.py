@@ -636,6 +636,9 @@ class _LiveShapedBCClient(BusinessCentralClient):
     def get_users(self):
         return []
 
+    def get_user_setups(self):
+        return []
+
     def get_user_tasks(self):
         return []
 

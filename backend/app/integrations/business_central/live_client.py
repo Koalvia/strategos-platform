@@ -5,9 +5,9 @@
 against BC's real REST API (Dynamics 365 Business Central, the Strategos custom
 API published by Becentis — see ``docs/postman/``).
 
-``customers``, ``projects``, ``users``, ``obligations`` and ``projectObligations``
-are wired up: their payloads are BC's native entities, so this client does the
-narrowing down to the transport DTOs. ``obligation`` now carries ``periodicity``
+``customers``, ``projects``, ``users``, ``userSetups``, ``obligations`` and
+``projectObligations`` are wired up: their payloads are BC's native entities, so
+this client does the narrowing down to the transport DTOs. ``obligation`` now carries ``periodicity``
 and ``dueDateRule`` and ``projectObligation`` now carries ``subject``, ``dueDate``
 and ``submissionDate``, so those fields are mapped through. ``status`` has no BC
 source (Strategos derives it), and an instance BC still returns without a
@@ -62,6 +62,7 @@ from app.integrations.business_central.models import (
     BCSalesInvoiceLine,
     BCTimeSheetPostingEntry,
     BCUser,
+    BCUserSetup,
     BCUserTask,
     CustomerStatus,
     ProjectStatus,
@@ -598,9 +599,31 @@ class LiveBusinessCentralClient(BusinessCentralClient):
                     id=row["userSecurityID"],
                     name=row.get("fullName", ""),
                     email=email,
+                    user_name=(row.get("userName") or "").strip(),
                 )
             )
         return users
+
+    def get_user_setups(self) -> list[BCUserSetup]:
+        """Return every user's permission setup, mapped from BC ``userSetups``.
+
+        A BC failure here would silently restrict the whole Usuarios directory,
+        so it is logged and degraded to ``[]`` rather than raised: callers apply
+        their own restrictive default (see ``app.domains.users.service``).
+        """
+        try:
+            rows = self._get_all("userSetups")
+        except httpx.HTTPError:
+            logger.warning("Business Central userSetups read failed", exc_info=True)
+            return []
+
+        return [
+            BCUserSetup(
+                user_id=(row.get("userID") or "").strip(),
+                manage_all_customers=bool(row.get("manageAllCustomers", False)),
+            )
+            for row in rows
+        ]
 
     # -- Status mapping ---------------------------------------------------------
 

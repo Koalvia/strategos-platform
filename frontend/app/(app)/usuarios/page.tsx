@@ -16,6 +16,8 @@ export default function UsuariosPage() {
     const loadUsers = async () => {
       setLoading(true)
       try {
+        // The backend already scopes this to what the caller may see, per their
+        // Business Central `manageAllCustomers` setup — render whatever it returns.
         const result = await usersApi.getUsers()
         if (!active) return
         setUsers(result.success && result.data ? result.data : [])

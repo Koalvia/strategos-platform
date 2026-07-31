@@ -1,0 +1,8 @@
+[
+  { "user_id": "MARC", "manage_all_customers": true },
+  { "user_id": "ANNA", "manage_all_customers": false },
+  { "user_id": "LAURA", "manage_all_customers": false },
+  { "user_id": "JORDI", "manage_all_customers": false },
+  { "user_id": "NURIA", "manage_all_customers": false },
+  { "user_id": "POL", "manage_all_customers": false }
+]

@@ -32,6 +32,9 @@ def list_users(
     Users come from the local ``auth.User`` table (identity stays local); the
     active-task count is each user's number of non-"Hecho" tasks, resolved from
     Business Central's ``userTasks`` by matching the local email to a BC user.
+
+    The listing is scoped to what the caller may see: the full directory only if
+    their BC user setup has ``manageAllCustomers``, otherwise just their own row.
     """
     service = UsersService(db, bc_client)
-    return service.list_directory()
+    return service.list_directory(current_user)

@@ -7,7 +7,10 @@ stays local) with each user's active-task count derived from the fixture-backed
 * the seed creating the 6 staff users with the documented roles and no usable
   password (and being idempotent),
 * the endpoint returning name/role/email/active_tasks per user with the active
-  count computed from the mock BC ``userTasks`` (non-"Hecho" tasks), and
+  count computed from the mock BC ``userTasks`` (non-"Hecho" tasks),
+* the listing being scoped by BC ``userSetups.manageAllCustomers`` — the whole
+  directory when set, only the caller's own row otherwise (or when no setup
+  resolves), and
 * that the endpoint rejects unauthenticated requests.
 
 Active-task counts are computed from the mock BC data: a local user is matched to
@@ -18,9 +21,11 @@ current fixtures this yields Marc 2, Anna 3, Laura 4, Jordi 3, Núria 2, Pol 1.
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.dependencies import get_business_central_client
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user, verify_password
+from app.integrations.business_central.mock_client import MockBusinessCentralClient
 from app.main import app
 from scripts.seed_staff_users import STAFF, seed_staff_users
 
@@ -175,6 +180,83 @@ def test_directory_user_without_bc_match_has_zero(db_session):
 
     by_email = {row["email"]: row for row in body}
     assert by_email["outsider@example.com"]["active_tasks"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# Visibility: BC userSetups.manageAllCustomers
+# --------------------------------------------------------------------------- #
+
+
+class _NoSetupsBCClient(MockBusinessCentralClient):
+    """Mock BC whose ``userSetups`` is empty — what the live client degrades to."""
+
+    def get_user_setups(self):
+        return []
+
+
+@pytest.fixture
+def client_factory(db_session):
+    """Build a client authenticated as a given email, with an optional BC client."""
+    seed_staff_users(db_session)
+
+    def override_get_db():
+        yield db_session
+
+    def make(email: str, bc_client=None):
+        current = db_session.query(User).filter(User.email == email).one()
+        current.is_verified = True
+        db_session.commit()
+
+        app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_verified_user] = lambda: current
+        if bc_client is not None:
+            app.dependency_overrides[get_business_central_client] = lambda: bc_client
+        return TestClient(app)
+
+    yield make
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.integration
+def test_directory_full_with_manage_all_customers(client_factory):
+    """Marc's BC setup has the flag, so he sees the whole directory."""
+    with client_factory("marc@estrategos.ad") as client:
+        body = client.get(USERS_URL).json()
+
+    assert [row["email"] for row in body] == [email for _, _, email in STAFF]
+
+
+@pytest.mark.integration
+def test_directory_scoped_to_self_without_manage_all_customers(client_factory):
+    """Anna's BC setup has the flag off, so she only sees her own row."""
+    with client_factory("anna@estrategos.ad") as client:
+        body = client.get(USERS_URL).json()
+
+    assert len(body) == 1
+    assert body[0]["email"] == "anna@estrategos.ad"
+    assert body[0]["role"] == "Responsable Fiscal"
+    assert body[0]["active_tasks"] == EXPECTED_ACTIVE["anna@estrategos.ad"]
+
+
+@pytest.mark.integration
+def test_directory_scoped_to_self_when_no_setup_resolves(client_factory):
+    """No setup row (or a BC outage the live client degrades to ``[]``) restricts."""
+    with client_factory("marc@estrategos.ad", _NoSetupsBCClient()) as client:
+        resp = client.get(USERS_URL)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["email"] == "marc@estrategos.ad"
+
+
+@pytest.mark.integration
+def test_directory_response_shape_is_unchanged_when_scoped(client_factory):
+    """Scoping changes which rows come back, never their fields."""
+    with client_factory("anna@estrategos.ad") as client:
+        body = client.get(USERS_URL).json()
+
+    assert set(body[0].keys()) == {"name", "role", "email", "active_tasks"}
 
 
 @pytest.mark.integration

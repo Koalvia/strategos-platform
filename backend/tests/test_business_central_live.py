@@ -14,7 +14,9 @@ confirmed BC payloads (no real Strategos client data / PII). They cover:
   ``periodicity``/``dueDateRule`` and ``subject``/``dueDate``/``submissionDate``
   fields BC now provides (and the undated fallback when a date is absent);
 * that the still-deferred ``userTasks`` entity returns ``[]`` with a warning
-  logged, instead of raising.
+  logged, instead of raising;
+* the ``userSetups`` mapping (``manageAllCustomers``), which degrades to ``[]``
+  on a failed read for the same reason.
 """
 
 import logging
@@ -32,6 +34,7 @@ from app.integrations.business_central.models import (
     BCProject,
     BCProjectObligation,
     BCUser,
+    BCUserSetup,
     CustomerStatus,
     ProjectStatus,
 )
@@ -616,6 +619,7 @@ def test_user_field_mapping_with_email_fallback():
     users = [
         {
             "userSecurityID": "11111111-1111-1111-1111-111111111111",
+            "userName": "AGUSTINA",
             "fullName": "Contact Email User",
             "contactEmail": "contact@estrategos.ad",
             "authenticationEmail": "auth@estrategos.ad",
@@ -634,8 +638,11 @@ def test_user_field_mapping_with_email_fallback():
     assert result[0].id == "11111111-1111-1111-1111-111111111111"
     assert result[0].name == "Contact Email User"
     assert result[0].email == "contact@estrategos.ad"
+    # userName is the code userSetups is keyed by; absent, it stays blank.
+    assert result[0].user_name == "AGUSTINA"
     # Blank contactEmail falls back to authenticationEmail.
     assert result[1].email == "fallback@estrategos.ad"
+    assert result[1].user_name == ""
 
 
 @pytest.mark.unit
@@ -770,10 +777,11 @@ def test_base_url_matches_documented_pattern():
 
 
 def _build_billing(**rows_by_entity):
-    """Build a live client + request recorder returning rows per billing entity.
+    """Build a live client + request recorder returning rows per entity.
 
     Keys are BC entity names (``salesInvoiceHeaders`` etc.); each value is the
-    row list that entity's read should return.
+    row list that entity's read should return. An entity with no rows configured
+    answers 404, which is how failed-read paths are exercised.
     """
     requests: list[httpx.Request] = []
 
@@ -971,3 +979,45 @@ def test_time_sheet_and_resource_mapping():
         25.0,
         60.0,
     )
+
+
+# --------------------------------------------------------------------------- #
+# User setups (manageAllCustomers)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.unit
+def test_user_setup_mapping_ignores_odata_metadata():
+    """Setups map ``userID``/``manageAllCustomers``; the etag is not mapped."""
+    client, _ = _build_billing(
+        userSetups=[
+            {"@odata.etag": "W/\"abc\"", "userID": "AGUSTINA", "manageAllCustomers": True},
+            {"@odata.etag": "W/\"def\"", "userID": "JORDI", "manageAllCustomers": False},
+            # A payload without the flag is treated as not privileged.
+            {"userID": "ADMIN1"},
+        ]
+    )
+
+    setups = client.get_user_setups()
+    assert all(isinstance(s, BCUserSetup) for s in setups)
+    assert [(s.user_id, s.manage_all_customers) for s in setups] == [
+        ("AGUSTINA", True),
+        ("JORDI", False),
+        ("ADMIN1", False),
+    ]
+
+
+@pytest.mark.unit
+def test_user_setups_read_failure_degrades_to_empty(caplog):
+    """A failing ``userSetups`` read logs and returns ``[]`` instead of raising.
+
+    Callers then apply their own restrictive default, so a BC outage narrows the
+    Usuarios directory rather than taking the page down.
+    """
+    # No ``userSetups`` rows configured, so the mock transport answers 404.
+    client, _ = _build_billing()
+
+    with caplog.at_level(logging.WARNING):
+        assert client.get_user_setups() == []
+
+    assert "userSetups" in caplog.text
