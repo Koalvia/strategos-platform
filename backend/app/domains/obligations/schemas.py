@@ -18,6 +18,7 @@ from enum import Enum
 
 from pydantic import BaseModel
 
+from app.core.schemas import PaginatedResponse
 from app.integrations.business_central.models import Periodicity
 
 
@@ -86,3 +87,9 @@ class ProjectObligationResponse(BaseModel):
     due_date: date | None = None
     submission_date: date | None = None
     status: DerivedObligationStatus
+
+
+# One page of per-project instances, in the same envelope the dashboard's
+# "Facturación" table uses, so the client learns the real total behind the page.
+# The row model is unchanged.
+ProjectObligationPage = PaginatedResponse[ProjectObligationResponse]

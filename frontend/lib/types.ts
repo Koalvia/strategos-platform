@@ -173,6 +173,21 @@ export interface ProjectObligation {
   status: ObligationStatus
 }
 
+// One page of instances exactly as the backend sends it (see PageMeta below).
+// Only the route handler sees this shape: it unwraps the envelope so client code
+// keeps receiving a plain array of obligations plus the meta alongside it.
+export interface ProjectObligationPageResponse {
+  items: ProjectObligationResponse[]
+  meta: PageMeta
+}
+
+// An option in the Obligaciones "Proyecto" filter, from
+// GET /api/v1/obligations/projects. Already ordered by name by the backend.
+export interface ObligationProjectOption {
+  id: string
+  name: string
+}
+
 // Users (Usuarios) directory. Identity stays local; the active-task count is
 // derived from Business Central. Field names mirror the Usuarios table columns.
 

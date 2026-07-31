@@ -33,6 +33,7 @@ export const config = {
         obligations: {
           base: "/api/v1/obligations",
           catalog: "/api/v1/obligations/catalog",
+          projects: "/api/v1/obligations/projects",
         },
         users: {
           base: "/api/v1/users",
@@ -78,6 +79,9 @@ export const config = {
       },
       obligations: {
         base: "/api/obligations",
+        // Same route, asked for the "Proyecto" filter's option list instead of a
+        // page of rows — see the `options` param in app/api/obligations/route.ts.
+        projectOptions: "/api/obligations?options=projects",
       },
       users: {
         base: "/api/users",
