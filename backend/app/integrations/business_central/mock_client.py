@@ -39,6 +39,7 @@ from app.integrations.business_central.models import (
     BCSalesInvoiceLine,
     BCTimeSheetPostingEntry,
     BCUser,
+    BCUserSetup,
     BCUserTask,
     CustomerStatus,
     ProjectStatus,
@@ -58,6 +59,7 @@ def _load(filename: str, model: type) -> list:
 _CUSTOMERS = _load("customers.json", BCCustomer)
 _PROJECTS = _load("projects.json", BCProject)
 _USERS = _load("users.json", BCUser)
+_USER_SETUPS = _load("user_setups.json", BCUserSetup)
 _USER_TASKS = _load("user_tasks.json", BCUserTask)
 _OBLIGATIONS = _load("obligations.json", BCObligation)
 _PROJECT_OBLIGATIONS = _load("project_obligations.json", BCProjectObligation)
@@ -192,6 +194,9 @@ class MockBusinessCentralClient(BusinessCentralClient):
 
     def get_users(self) -> list[BCUser]:
         return list(_USERS)
+
+    def get_user_setups(self) -> list[BCUserSetup]:
+        return list(_USER_SETUPS)
 
     def get_user_tasks(self) -> list[BCUserTask]:
         return list(_USER_TASKS)

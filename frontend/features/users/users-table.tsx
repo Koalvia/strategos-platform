@@ -27,19 +27,18 @@ export function UsersTable({ users, loading }: UsersTableProps) {
             <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>Nombre</TableHead>
             <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>Rol</TableHead>
             <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>Email</TableHead>
-            <TableHead className={cn(HEAD_CLASS, "px-6 py-4")}>Tareas activas</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {loading ? (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={4} className="px-6 py-12 text-center text-sm text-slate-500">
+              <TableCell colSpan={3} className="px-6 py-12 text-center text-sm text-slate-500">
                 Cargando usuarios...
               </TableCell>
             </TableRow>
           ) : users.length === 0 ? (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={4} className="px-6 py-12 text-center text-sm text-slate-500">
+              <TableCell colSpan={3} className="px-6 py-12 text-center text-sm text-slate-500">
                 No se han encontrado usuarios.
               </TableCell>
             </TableRow>
@@ -58,7 +57,6 @@ export function UsersTable({ users, loading }: UsersTableProps) {
                 </TableCell>
                 <TableCell className="px-6 py-4 text-slate-700">{user.role ?? "—"}</TableCell>
                 <TableCell className="px-6 py-4 text-slate-500">{user.email}</TableCell>
-                <TableCell className="px-6 py-4 text-slate-700">{user.activeTasks}</TableCell>
               </TableRow>
             ))
           )}

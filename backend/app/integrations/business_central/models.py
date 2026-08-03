@@ -163,6 +163,18 @@ class BCUser(BaseModel):
     id: str
     name: str
     email: str
+    # BC's User ID code (``userName``, e.g. "AGUSTINA"); joins to BCUserSetup.
+    user_name: str = ""
+
+
+class BCUserSetup(BaseModel):
+    """One user's permission setup (BC ``GET /userSetups``).
+
+    ``user_id`` is the BC User ID code, joined to :attr:`BCUser.user_name`.
+    """
+
+    user_id: str
+    manage_all_customers: bool = False
 
 
 class BCUserTask(BaseModel):

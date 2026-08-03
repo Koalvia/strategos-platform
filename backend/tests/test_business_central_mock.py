@@ -27,6 +27,7 @@ from app.integrations.business_central.models import (
     BCSalesInvoiceLine,
     BCTimeSheetPostingEntry,
     BCUser,
+    BCUserSetup,
     BCUserTask,
     CustomerStatus,
     ProjectStatus,
@@ -148,6 +149,21 @@ def test_get_users_count_type_and_emails(client):
         "Pol Ribas",
     }
     assert all(u.email.endswith("@estrategos.ad") for u in users)
+
+
+@pytest.mark.unit
+def test_get_user_setups_covers_every_user(client):
+    """Every BC user has a setup row, keyed by their ``user_name`` code."""
+    setups = client.get_user_setups()
+    assert all(isinstance(s, BCUserSetup) for s in setups)
+    assert {s.user_id for s in setups} == {u.user_name for u in client.get_users()}
+
+
+@pytest.mark.unit
+def test_get_user_setups_grants_only_the_director(client):
+    """Only Marc Solé (Soci Director) manages all customers, as in live BC."""
+    granted = {s.user_id for s in client.get_user_setups() if s.manage_all_customers}
+    assert granted == {"MARC"}
 
 
 @pytest.mark.unit

@@ -26,6 +26,7 @@ from app.integrations.business_central.models import (
     BCSalesInvoiceLine,
     BCTimeSheetPostingEntry,
     BCUser,
+    BCUserSetup,
     BCUserTask,
     CustomerStatus,
     ProjectStatus,
@@ -142,6 +143,11 @@ class BusinessCentralClient(ABC):
     @abstractmethod
     def get_users(self) -> list[BCUser]:
         """Return all internal users (BC ``GET /users``)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_user_setups(self) -> list[BCUserSetup]:
+        """Return every user's permission setup (BC ``GET /userSetups``)."""
         raise NotImplementedError
 
     @abstractmethod
