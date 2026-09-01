@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app import logger
 from app.core.pagination import build_paginated_response
+from app.core.visibility import CustomerScope
 from app.domains.billing.service import BillingService
 from app.domains.obligations.schemas import (
     DerivedObligationStatus,
@@ -51,15 +52,29 @@ _T = TypeVar("_T")
 class DashboardService:
     """Compose granular dashboard widgets from the other domains' services."""
 
-    def __init__(self, db: Session, bc_client: BusinessCentralClient):
+    def __init__(
+        self,
+        db: Session,
+        bc_client: BusinessCentralClient,
+        scope: CustomerScope | None = None,
+    ):
         self.bc_client = bc_client
+        # None means every customer, matching the BC port's own filter contract.
+        self.customer_ids = (
+            list(scope.customer_ids)
+            if scope and scope.customer_ids is not None
+            else None
+        )
         self.obligations = ObligationsService(db, bc_client)
         self.tasks = TasksService(db, bc_client)
         self.billing = BillingService(db, bc_client)
 
     def get_active_projects_kpi(self) -> ActiveTotalKpi | None:
         """Return active and total projects count for the KPI card."""
-        projects = self._section(SECTION_PROJECTS, self.bc_client.get_projects)
+        projects = self._section(
+            SECTION_PROJECTS,
+            lambda: self.bc_client.get_projects(customer_ids=self.customer_ids),
+        )
         if projects is None:
             return None
         return ActiveTotalKpi(
@@ -69,7 +84,10 @@ class DashboardService:
 
     def get_active_customers_kpi(self) -> ActiveTotalKpi | None:
         """Return active and total customers count for the KPI card."""
-        customers = self._section(SECTION_CUSTOMERS, self.bc_client.get_customers)
+        customers = self._section(
+            SECTION_CUSTOMERS,
+            lambda: self.bc_client.get_customers(customer_ids=self.customer_ids),
+        )
         if customers is None:
             return None
         return ActiveTotalKpi(
@@ -147,7 +165,7 @@ class DashboardService:
         customers = self._section(
             SECTION_CUSTOMERS,
             lambda: self.bc_client.get_customer_refs_page(
-                page=page, page_size=page_size
+                page=page, page_size=page_size, customer_ids=self.customer_ids
             ),
         )
         if customers is None:

@@ -6,9 +6,17 @@ interface ProjectsGridProps {
   // Soonest unfiled obligation per project id, used for the "Próx: …" line.
   nextObligations: Record<string, ProjectObligation>
   loading: boolean
+  // Empty because Business Central assigns this user no customers, and projects
+  // follow their customers.
+  noAssignedCustomers?: boolean
 }
 
-export function ProjectsGrid({ projects, nextObligations, loading }: ProjectsGridProps) {
+export function ProjectsGrid({
+  projects,
+  nextObligations,
+  loading,
+  noAssignedCustomers = false,
+}: ProjectsGridProps) {
   if (loading) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
@@ -20,7 +28,19 @@ export function ProjectsGrid({ projects, nextObligations, loading }: ProjectsGri
   if (projects.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
-        No se han encontrado proyectos.
+        {noAssignedCustomers ? (
+          <>
+            <span className="block font-medium text-slate-700">
+              No tienes clientes asignados.
+            </span>
+            <span className="mt-1 block">
+              Los proyectos siguen a tus clientes: pide a administración que te asigne
+              clientes en Business Central.
+            </span>
+          </>
+        ) : (
+          "No se han encontrado proyectos."
+        )}
       </div>
     )
   }

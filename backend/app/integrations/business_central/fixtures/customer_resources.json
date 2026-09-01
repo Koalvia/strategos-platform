@@ -1,0 +1,5 @@
+[
+  { "customer_id": "cust-001", "resource_id": "RES-02" },
+  { "customer_id": "cust-002", "resource_id": "RES-02" },
+  { "customer_id": "cust-003", "resource_id": "RES-03" }
+]

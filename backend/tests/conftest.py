@@ -30,6 +30,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.dependencies import get_customer_scope
+from app.core.visibility import CustomerScope
 from app.db.base import Base
 from app.db.session import get_db
 from app.domains.auth.models import User
@@ -78,8 +80,8 @@ def test_user(db_session) -> User:
 def client(db_session, test_user) -> Generator[TestClient, None, None]:
     """A TestClient wired to the in-memory DB and authenticated as ``test_user``.
 
-    When TESTING=1, HTTPBearer auth is bypassed and the test_user is returned.
-    This fixture ensures the test_user exists in the database for lookup.
+    The customer scope is pinned to "sees everything" so these tests keep asserting
+    against the whole fixture set; scoping is covered by its own two test modules.
     """
     app.dependency_overrides.clear()
 
@@ -91,6 +93,9 @@ def client(db_session, test_user) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_verified_user] = override_get_verified_user
+    app.dependency_overrides[get_customer_scope] = lambda: CustomerScope(
+        customer_ids=None, reason="test-unrestricted"
+    )
 
     with TestClient(app) as test_client:
         yield test_client

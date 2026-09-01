@@ -5,7 +5,9 @@ from fastapi import Depends, HTTPException
 
 from app.core.config import settings
 from app.core.security import get_current_user
+from app.core.visibility import CustomerScope, resolve_customer_scope
 from app.domains.auth.models import User
+from app.domains.auth.utils import get_verified_user
 from app.integrations.bopa import (
     BopaClient,
     LiveBopaClient,
@@ -78,3 +80,15 @@ def get_bopa_client() -> BopaClient:
         f"Unsupported BOPA_MODE: {settings.BOPA_MODE!r}. "
         'Expected "mock" or "live".'
     )
+
+
+def get_customer_scope(
+    user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+) -> CustomerScope:
+    """Resolve the caller's customer scope once per request.
+
+    Uses the same ``get_verified_user`` the routers do: it yields the ORM ``User``
+    (with its email), unlike ``require_verified_user``'s token payload.
+    """
+    return resolve_customer_scope(user, bc_client)

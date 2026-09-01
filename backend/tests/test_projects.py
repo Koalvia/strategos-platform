@@ -288,7 +288,7 @@ class _LiveShapedBCClient(BusinessCentralClient):
     returns, letting us exercise that path without HTTP mocking.
     """
 
-    def get_customers(self):
+    def get_customers(self, **kwargs):
         return [
             BCCustomer(
                 id="C1",
@@ -330,10 +330,13 @@ class _LiveShapedBCClient(BusinessCentralClient):
         entity_type=None,
         status=None,
         customer_id=None,
+        customer_ids=None,
         cursor=None,
         page_size=25,
     ):
         projects = self.get_projects()
+        if customer_ids is not None:
+            projects = [p for p in projects if p.customer_id in customer_ids]
         if search:
             needle = search.casefold()
             projects = [p for p in projects if needle in p.name.casefold()]
@@ -360,7 +363,7 @@ class _LiveShapedBCClient(BusinessCentralClient):
     def get_users(self):
         return []
 
-    def get_user_setups(self):
+    def get_customer_resources(self):
         return []
 
     def get_user_tasks(self):

@@ -13,6 +13,7 @@ each implementation.
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.visibility import CustomerScope
 from app.integrations.business_central.client import (
     DEFAULT_PROJECTS_PAGE_SIZE,
     BusinessCentralClient,
@@ -36,22 +37,14 @@ class ProjectsService:
         entity_type: str | None = None,
         status: ProjectStatus | None = None,
         customer_id: str | None = None,
+        scope: CustomerScope | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
     ) -> ProjectPageResponse:
-        """Return one page of projects, optionally filtered.
+        """Return one page of projects, optionally filtered. Filters compose.
 
-        ``search`` matches the project name as a case-insensitive substring;
-        ``project_type`` and ``entity_type`` match their field as a
-        case-insensitive exact value (the two "Todos" dropdowns in
-        ``proyectos.png``); ``status`` keeps only projects in that state;
-        ``customer_id`` keeps only projects belonging to that customer (an
-        exact match on ``BCProject.customer_id``, pushed down to the BC page
-        via ``get_projects_page`` so a customer's projects are found
-        regardless of how many total projects the page window would
-        otherwise cover); ``cursor`` continues a previous page (see
-        ``ProjectPageResponse.next_cursor``). Filters compose (all supplied
-        filters must match).
+        ``scope`` limits the page to the projects of the caller's own customers;
+        omitting it returns every project.
         """
         page = self.bc_client.get_projects_page(
             search=search,
@@ -59,6 +52,7 @@ class ProjectsService:
             entity_type=entity_type,
             status=status,
             customer_id=customer_id,
+            customer_ids=list(scope.customer_ids) if scope and scope.customer_ids is not None else None,
             cursor=cursor,
             page_size=page_size,
         )
@@ -68,11 +62,24 @@ class ProjectsService:
         return ProjectPageResponse(
             items=[self._to_response(p, names_by_id) for p in items],
             next_cursor=page.next_cursor,
+            no_assigned_customers=bool(scope and scope.customer_ids == ()),
         )
 
-    def get_project(self, project_id: str) -> ProjectResponse:
-        """Return a single project by id, or raise 404 if it does not exist."""
-        for project in self.bc_client.get_projects():
+    def get_project(
+        self, project_id: str, scope: CustomerScope | None = None
+    ) -> ProjectResponse:
+        """Return a single project by id, or raise 404 if it does not exist.
+
+        A project whose customer falls outside ``scope`` is a 404 too.
+        """
+        # Narrowed to the caller's customers, so a scoped lookup never sweeps the
+        # whole table; a manager's scope is None and reads everything as before.
+        scoped_ids = (
+            list(scope.customer_ids)
+            if scope and scope.customer_ids is not None
+            else None
+        )
+        for project in self.bc_client.get_projects(customer_ids=scoped_ids):
             if project.id == project_id:
                 names_by_id = self.bc_client.get_customer_names([project.customer_id])
                 return self._to_response(project, names_by_id)

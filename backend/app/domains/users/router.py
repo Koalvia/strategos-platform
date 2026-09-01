@@ -9,7 +9,8 @@ Requires a verified user (and the ``x-api-key`` gateway header, except under
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_business_central_client
+from app.core.dependencies import get_business_central_client, get_customer_scope
+from app.core.visibility import CustomerScope
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
@@ -26,15 +27,12 @@ def list_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
     """List the staff directory: name, role, email and active-task count per user.
 
-    Users come from the local ``auth.User`` table (identity stays local); the
-    active-task count is each user's number of non-"Hecho" tasks, resolved from
-    Business Central's ``userTasks`` by matching the local email to a BC user.
-
     The listing is scoped to what the caller may see: the full directory only if
-    their BC user setup has ``manageAllCustomers``, otherwise just their own row.
+    their BC resource has ``manageAllCustomers``, otherwise just their own row.
     """
     service = UsersService(db, bc_client)
-    return service.list_directory(current_user)
+    return service.list_directory(current_user, scope=scope)

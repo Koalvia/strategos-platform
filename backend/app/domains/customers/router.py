@@ -8,7 +8,12 @@ header, except under ``TESTING=1``).
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_bopa_client, get_business_central_client
+from app.core.dependencies import (
+    get_bopa_client,
+    get_business_central_client,
+    get_customer_scope,
+)
+from app.core.visibility import CustomerScope
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
@@ -36,17 +41,20 @@ def list_customers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
     """List one page of the firm's customers, sourced read-only from Business Central.
 
-    Optional query params: ``search`` (case-insensitive substring match on name
-    or NIF), ``status`` (``Activo`` / ``Inactivo``), ``cursor`` (the
-    continuation token from a previous page's ``next_cursor``) and
-    ``page_size``.
+    Scoped to the caller's own customers unless their Business Central resource has
+    ``manageAllCustomers``. Optional params: ``search``, ``status``, ``cursor``, ``page_size``.
     """
     service = CustomersService(db, bc_client)
     return service.list_customers(
-        search=search, status=status, cursor=cursor, page_size=page_size
+        search=search,
+        status=status,
+        scope=scope,
+        cursor=cursor,
+        page_size=page_size,
     )
 
 
@@ -56,10 +64,11 @@ def get_customer(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
-    """Return a single customer by id (404 if unknown)."""
+    """Return a single customer by id (404 if unknown, or outside the caller's scope)."""
     service = CustomersService(db, bc_client)
-    return service.get_customer(customer_id)
+    return service.get_customer(customer_id, scope=scope)
 
 
 @router.get("/{customer_id}/bopa-matches", response_model=DocumentSearchPage)
@@ -71,6 +80,7 @@ def get_customer_bopa_matches(
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
     bopa_client: BopaClient = Depends(get_bopa_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
     """Search BOPA documents matching a customer's name, NIF, and projects.
 
@@ -82,12 +92,10 @@ def get_customer_bopa_matches(
     Raises 404 if the customer does not exist.
     """
     customers_service = CustomersService(db, bc_client)
-    customer = customers_service.get_customer(customer_id)
+    customer = customers_service.get_customer(customer_id, scope=scope)
 
-    # Get projects belonging to this customer
-    projects = bc_client.get_projects()
-    customer_projects = [p for p in projects if p.customer_id == customer_id]
-    project_names = [p.name for p in customer_projects]
+    # Scoped read: this customer's projects, not the whole table.
+    project_names = [p.name for p in bc_client.get_projects(customer_ids=[customer_id])]
 
     bopa_service = BopaService(db, bopa_client)
     return bopa_service.search_documents_by_client(

@@ -22,7 +22,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app import logger
-from app.core.dependencies import get_business_central_client
+from app.core.dependencies import get_business_central_client, get_customer_scope
+from app.core.visibility import CustomerScope
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
@@ -39,6 +40,11 @@ from .service import DashboardService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
+# The customers/projects/billing widgets below take the caller's CustomerScope. The
+# obligations and tasks widgets deliberately do not yet: those domains are unscoped
+# company-wide (see app/core/visibility.py), so a restricted user still sees every
+# project's obligations here. Tracked as the follow-up that scopes those two domains.
+
 
 def get_reference_date() -> date:
     """Return the reference "today" used to derive obligation due states."""
@@ -50,12 +56,13 @@ def get_active_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
-    """Return the active and total projects count for the KPI tile."""
+    """Return the active and total projects count for the KPI tile, scoped to the caller."""
     start_time = time.perf_counter()
     start_hour = datetime.now().strftime("%H:%M:%S")
 
-    result = DashboardService(db, bc_client).get_active_projects_kpi()
+    result = DashboardService(db, bc_client, scope).get_active_projects_kpi()
 
     duration = time.perf_counter() - start_time
     logger.info(
@@ -68,12 +75,13 @@ def get_active_customers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
-    """Return the active and total customers count for the KPI tile."""
+    """Return the active and total customers count for the KPI tile, scoped to the caller."""
     start_time = time.perf_counter()
     start_hour = datetime.now().strftime("%H:%M:%S")
 
-    result = DashboardService(db, bc_client).get_active_customers_kpi()
+    result = DashboardService(db, bc_client, scope).get_active_customers_kpi()
 
     duration = time.perf_counter() - start_time
     logger.info(
@@ -144,12 +152,15 @@ def get_billing_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
-    """Return one page of the per-customer billing breakdown (10 per page)."""
+    """Return one page of the per-customer billing breakdown, scoped to the caller."""
     start_time = time.perf_counter()
     start_hour = datetime.now().strftime("%H:%M:%S")
 
-    result = DashboardService(db, bc_client).get_billing(page=page, page_size=page_size)
+    result = DashboardService(db, bc_client, scope).get_billing(
+        page=page, page_size=page_size
+    )
 
     duration = time.perf_counter() - start_time
     logger.info(

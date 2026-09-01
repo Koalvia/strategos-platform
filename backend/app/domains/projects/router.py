@@ -9,7 +9,8 @@ served here; the obligation checklist is a separate domain (issue #9).
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_business_central_client
+from app.core.dependencies import get_business_central_client, get_customer_scope
+from app.core.visibility import CustomerScope
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
@@ -37,15 +38,13 @@ def list_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
     """List one page of projects, sourced read-only from Business Central.
 
-    Optional query params (all compose): ``search`` (case-insensitive substring
-    match on the project name), ``project_type`` and ``entity_type``
-    (case-insensitive exact match), ``status`` (``Activo`` / ``Inactivo``),
-    ``customer_id`` (exact match, used by the customer detail screen to list a
-    client's own projects), ``cursor`` (the continuation token from a previous
-    page's ``next_cursor``) and ``page_size``.
+    Scoped to the projects of the caller's own customers unless their Business Central
+    resource has ``manageAllCustomers``. Optional params (all compose): ``search``,
+    ``project_type``, ``entity_type``, ``status``, ``customer_id``, ``cursor``, ``page_size``.
     """
     service = ProjectsService(db, bc_client)
     return service.list_projects(
@@ -54,6 +53,7 @@ def list_projects(
         entity_type=entity_type,
         status=status,
         customer_id=customer_id,
+        scope=scope,
         cursor=cursor,
         page_size=page_size,
     )
@@ -65,7 +65,8 @@ def get_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
-    """Return a single project by id (404 if unknown)."""
+    """Return a single project by id (404 if unknown, or outside the caller's scope)."""
     service = ProjectsService(db, bc_client)
-    return service.get_project(project_id)
+    return service.get_project(project_id, scope=scope)

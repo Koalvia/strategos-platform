@@ -5,3 +5,7 @@ design/refs/**/*.jpeg binary
 design/refs/**/*.pdf binary
 # HTML mockups are text: normal diff/EOL handling, unlike the binary types above.
 design/refs/**/*.html text
+
+# Shell scripts must keep LF endings: Docker copies them into the image and a CRLF
+# shebang makes the kernel fail the exec with "no such file or directory".
+*.sh text eol=lf
