@@ -17,12 +17,19 @@ import type { Customer } from "@/lib/types"
 interface CustomersTableProps {
   customers: Customer[]
   loading: boolean
+  // Empty because Business Central assigns this user no customers, which is a
+  // different thing to say than "no results".
+  noAssignedCustomers?: boolean
 }
 
 const HEAD_CLASS =
   "text-xs font-semibold uppercase tracking-wide text-slate-500"
 
-export function CustomersTable({ customers, loading }: CustomersTableProps) {
+export function CustomersTable({
+  customers,
+  loading,
+  noAssignedCustomers = false,
+}: CustomersTableProps) {
   const router = useRouter()
 
   return (
@@ -48,7 +55,19 @@ export function CustomersTable({ customers, loading }: CustomersTableProps) {
           ) : customers.length === 0 ? (
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={6} className="px-6 py-12 text-center text-sm text-slate-500">
-                No se han encontrado clientes.
+                {noAssignedCustomers ? (
+                  <>
+                    <span className="block font-medium text-slate-700">
+                      No tienes clientes asignados.
+                    </span>
+                    <span className="mt-1 block">
+                      Habla con administración para que te asignen clientes en Business
+                      Central.
+                    </span>
+                  </>
+                ) : (
+                  "No se han encontrado clientes."
+                )}
               </TableCell>
             </TableRow>
           ) : (

@@ -39,6 +39,7 @@ export default function ProyectosPage() {
   const [entityType, setEntityType] = useState(ALL)
   const [projects, setProjects] = useState<Project[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [noAssignedCustomers, setNoAssignedCustomers] = useState(false)
   const [nextObligations, setNextObligations] = useState<
     Record<string, ProjectObligation>
   >({})
@@ -110,6 +111,7 @@ export default function ProyectosPage() {
         if (result.success && result.data) {
           setProjects(result.data.items)
           setNextCursor(result.data.nextCursor)
+          setNoAssignedCustomers(result.data.noAssignedCustomers)
         } else {
           setProjects([])
           setNextCursor(null)
@@ -197,6 +199,7 @@ export default function ProyectosPage() {
           projects={projects}
           nextObligations={nextObligations}
           loading={loading}
+          noAssignedCustomers={noAssignedCustomers}
         />
       </div>
 

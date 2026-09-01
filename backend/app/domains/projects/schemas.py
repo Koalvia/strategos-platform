@@ -58,3 +58,6 @@ class ProjectPageResponse(BaseModel):
 
     items: list[ProjectResponse]
     next_cursor: str | None = None
+    # True when the page is empty because Business Central assigns this caller no
+    # customers — the screen says so instead of "no results".
+    no_assigned_customers: bool = False

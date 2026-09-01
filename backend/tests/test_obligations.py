@@ -592,7 +592,7 @@ class _LiveShapedBCClient(BusinessCentralClient):
     today, so we can exercise the ``due_date is None`` path without HTTP mocking.
     """
 
-    def get_customers(self):
+    def get_customers(self, **kwargs):
         return [
             BCCustomer(
                 id="C1",
@@ -636,7 +636,7 @@ class _LiveShapedBCClient(BusinessCentralClient):
     def get_users(self):
         return []
 
-    def get_user_setups(self):
+    def get_customer_resources(self):
         return []
 
     def get_user_tasks(self):

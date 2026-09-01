@@ -64,6 +64,9 @@ export interface CustomerResponse {
 export interface CustomerPageResponse {
   items: CustomerResponse[]
   next_cursor: string | null
+  // True when the page is empty because Business Central assigns the caller no
+  // customers, so the screen can say that instead of "no results".
+  no_assigned_customers: boolean
 }
 
 // Frontend type (camelCase for easier use in components)
@@ -80,6 +83,7 @@ export interface Customer {
 export interface CustomerPage {
   items: Customer[]
   nextCursor: string | null
+  noAssignedCustomers: boolean
 }
 
 // Project status matches the Business Central vocabulary the backend returns.
@@ -127,11 +131,13 @@ export interface Project {
 export interface ProjectPageResponse {
   items: ProjectResponse[]
   next_cursor: string | null
+  no_assigned_customers: boolean
 }
 
 export interface ProjectPage {
   items: Project[]
   nextCursor: string | null
+  noAssignedCustomers: boolean
 }
 
 // Derived due state for an obligation instance (values mirror the UI badges).
@@ -294,6 +300,7 @@ export function transformCustomerPageResponse(
   return {
     items: backendPage.items.map(transformCustomerResponse),
     nextCursor: backendPage.next_cursor,
+    noAssignedCustomers: backendPage.no_assigned_customers ?? false,
   }
 }
 
@@ -319,6 +326,7 @@ export function transformProjectPageResponse(
   return {
     items: backendPage.items.map(transformProjectResponse),
     nextCursor: backendPage.next_cursor,
+    noAssignedCustomers: backendPage.no_assigned_customers ?? false,
   }
 }
 

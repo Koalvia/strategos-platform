@@ -14,6 +14,7 @@ from app.integrations.business_central.models import (
     BCCustomer,
     BCCustomerPage,
     BCCustomerRefPage,
+    BCCustomerResource,
     BCJobLedgerEntry,
     BCObligation,
     BCProject,
@@ -26,7 +27,6 @@ from app.integrations.business_central.models import (
     BCSalesInvoiceLine,
     BCTimeSheetPostingEntry,
     BCUser,
-    BCUserSetup,
     BCUserTask,
     CustomerStatus,
     ProjectStatus,
@@ -53,13 +53,13 @@ class BusinessCentralClient(ABC):
     """Port mirroring the Business Central REST endpoints Strategos consumes."""
 
     @abstractmethod
-    def get_customers(self) -> list[BCCustomer]:
-        """Return all customers (BC ``GET /customers``).
+    def get_customers(
+        self, *, customer_ids: list[str] | None = None
+    ) -> list[BCCustomer]:
+        """Return all customers (BC ``GET /customers``), or just ``customer_ids``.
 
-        Used where every customer is genuinely needed (e.g. building an id ->
-        name lookup for enrichment elsewhere) — see
-        ``get_customers_page`` for the paginated, filtered listing used by the
-        customers directory itself.
+        Used where every customer is needed at once (id -> name lookups, dashboard
+        counts); the paginated directory listing is ``get_customers_page``.
         """
         raise NotImplementedError
 
@@ -69,21 +69,24 @@ class BusinessCentralClient(ABC):
         *,
         search: str | None = None,
         status: CustomerStatus | None = None,
+        customer_ids: list[str] | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_CUSTOMERS_PAGE_SIZE,
     ) -> BCCustomerPage:
-        """Return one page of customers, optionally filtered by ``search``/``status``."""
+        """Return one page of customers, optionally filtered.
+
+        ``customer_ids`` restricts it to those customers (shared filter contract).
+        """
         raise NotImplementedError
 
     @abstractmethod
     def get_customer_refs_page(
-        self, *, page: int, page_size: int
+        self, *, page: int, page_size: int, customer_ids: list[str] | None = None
     ) -> BCCustomerRefPage:
         """Return one name-ordered page of customer identities, plus the total.
-        Ordering by name is what makes such a page cheap to build: a caller can
-        pick its customers *before* aggregating anything about them (see
-        ``BillingService.billing_for_customers``) instead of having to aggregate
-        every customer just to discover which ones the page contains.
+
+        Ordering by name lets a caller pick its customers before aggregating anything
+        about them; ``customer_ids`` narrows the universe to the caller's own.
         """
         raise NotImplementedError
 
@@ -109,21 +112,14 @@ class BusinessCentralClient(ABC):
         entity_type: str | None = None,
         status: ProjectStatus | None = None,
         customer_id: str | None = None,
+        customer_ids: list[str] | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
     ) -> BCProjectPage:
         """Return one page of projects, optionally filtered.
 
-        ``customer_id`` is pushed down as part of the query (not applied after
-        the fact), so a customer's projects are found regardless of how many
-        total projects the page window would otherwise cover. Known
-        limitation: if a single customer had more projects than ``page_size``,
-        only the first page would come back — there is no cursor support yet
-        for combining a customer filter with pagination across pages.
-
-        ``cursor`` is an opaque continuation token taken from a previous
-        page's ``next_cursor``; when given, every other filter/``page_size``
-        is ignored since the cursor already encodes the original query.
+        ``customer_id`` picks one customer and ``customer_ids`` restricts to a set
+        (the visibility scope); both are pushed down. ``cursor`` encodes the query.
         """
         raise NotImplementedError
 
@@ -143,11 +139,6 @@ class BusinessCentralClient(ABC):
     @abstractmethod
     def get_users(self) -> list[BCUser]:
         """Return all internal users (BC ``GET /users``)."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_user_setups(self) -> list[BCUserSetup]:
-        """Return every user's permission setup (BC ``GET /userSetups``)."""
         raise NotImplementedError
 
     @abstractmethod
@@ -244,5 +235,10 @@ class BusinessCentralClient(ABC):
 
     @abstractmethod
     def get_resources(self) -> list[BCResource]:
-        """Return all billable resources (BC ``GET /resources``)."""
+        """Return all resource cards (BC ``GET /resources``)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_customer_resources(self) -> list[BCCustomerResource]:
+        """Return the customer/resource assignments (BC ``GET /customersResources``)."""
         raise NotImplementedError
