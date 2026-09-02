@@ -8,9 +8,9 @@ stays local) with each user's active-task count derived from the fixture-backed
   password (and being idempotent),
 * the endpoint returning name/role/email/active_tasks per user with the active
   count computed from the mock BC ``userTasks`` (non-"Hecho" tasks),
-* the listing being scoped by BC ``userSetups.manageAllCustomers`` — the whole
-  directory when set, only the caller's own row otherwise (or when no setup
-  resolves), and
+* the listing being scoped by BC ``resources.manageAllCustomers`` — the whole
+  directory when set, only the caller's own row otherwise (an unresolved
+  resource is restricted too), and
 * that the endpoint rejects unauthenticated requests.
 
 Active-task counts are computed from the mock BC data: a local user is matched to
@@ -183,14 +183,14 @@ def test_directory_user_without_bc_match_has_zero(db_session):
 
 
 # --------------------------------------------------------------------------- #
-# Visibility: BC userSetups.manageAllCustomers
+# Visibility: BC resources.manageAllCustomers
 # --------------------------------------------------------------------------- #
 
 
-class _NoSetupsBCClient(MockBusinessCentralClient):
-    """Mock BC whose ``userSetups`` is empty — what the live client degrades to."""
+class _NoResourcesBCClient(MockBusinessCentralClient):
+    """Mock BC with no resource cards, so nobody resolves and nobody is a manager."""
 
-    def get_user_setups(self):
+    def get_resources(self):
         return []
 
 
@@ -219,7 +219,7 @@ def client_factory(db_session):
 
 @pytest.mark.integration
 def test_directory_full_with_manage_all_customers(client_factory):
-    """Marc's BC setup has the flag, so he sees the whole directory."""
+    """Marc's resource has the flag, so he sees the whole directory."""
     with client_factory("marc@estrategos.ad") as client:
         body = client.get(USERS_URL).json()
 
@@ -228,7 +228,7 @@ def test_directory_full_with_manage_all_customers(client_factory):
 
 @pytest.mark.integration
 def test_directory_scoped_to_self_without_manage_all_customers(client_factory):
-    """Anna's BC setup has the flag off, so she only sees her own row."""
+    """Anna's resource has the flag off, so she only sees her own row."""
     with client_factory("anna@estrategos.ad") as client:
         body = client.get(USERS_URL).json()
 
@@ -239,9 +239,13 @@ def test_directory_scoped_to_self_without_manage_all_customers(client_factory):
 
 
 @pytest.mark.integration
-def test_directory_scoped_to_self_when_no_setup_resolves(client_factory):
-    """No setup row (or a BC outage the live client degrades to ``[]``) restricts."""
-    with client_factory("marc@estrategos.ad", _NoSetupsBCClient()) as client:
+def test_directory_scoped_to_self_when_no_resource_resolves(client_factory):
+    """With no matching resource the caller sees only their own row.
+
+    Restrictive by default: an account Business Central does not know gets no more
+    than itself, the same as a resource without assignments.
+    """
+    with client_factory("marc@estrategos.ad", _NoResourcesBCClient()) as client:
         resp = client.get(USERS_URL)
 
     assert resp.status_code == 200

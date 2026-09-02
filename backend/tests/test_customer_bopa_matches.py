@@ -10,6 +10,8 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.dependencies import get_customer_scope
+from app.core.visibility import CustomerScope
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
@@ -42,6 +44,10 @@ def authenticated_client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_verified_user] = lambda: user
+    # These tests are about BOPA matching, not visibility: see every customer.
+    app.dependency_overrides[get_customer_scope] = lambda: CustomerScope(
+        customer_ids=None, reason="test-unrestricted"
+    )
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

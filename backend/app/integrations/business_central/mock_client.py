@@ -27,6 +27,7 @@ from app.integrations.business_central.models import (
     BCCustomerPage,
     BCCustomerRef,
     BCCustomerRefPage,
+    BCCustomerResource,
     BCJobLedgerEntry,
     BCObligation,
     BCProject,
@@ -39,7 +40,6 @@ from app.integrations.business_central.models import (
     BCSalesInvoiceLine,
     BCTimeSheetPostingEntry,
     BCUser,
-    BCUserSetup,
     BCUserTask,
     CustomerStatus,
     ProjectStatus,
@@ -59,7 +59,6 @@ def _load(filename: str, model: type) -> list:
 _CUSTOMERS = _load("customers.json", BCCustomer)
 _PROJECTS = _load("projects.json", BCProject)
 _USERS = _load("users.json", BCUser)
-_USER_SETUPS = _load("user_setups.json", BCUserSetup)
 _USER_TASKS = _load("user_tasks.json", BCUserTask)
 _OBLIGATIONS = _load("obligations.json", BCObligation)
 _PROJECT_OBLIGATIONS = _load("project_obligations.json", BCProjectObligation)
@@ -74,6 +73,7 @@ _TIME_SHEET_POSTING_ENTRIES = _load(
     "time_sheet_posting_entries.json", BCTimeSheetPostingEntry
 )
 _RESOURCES = _load("resources.json", BCResource)
+_CUSTOMER_RESOURCES = _load("customer_resources.json", BCCustomerResource)
 
 _T = TypeVar("_T")
 
@@ -96,19 +96,22 @@ def _filtered(
 class MockBusinessCentralClient(BusinessCentralClient):
     """A :class:`BusinessCentralClient` backed by committed JSON fixtures."""
 
-    def get_customers(self) -> list[BCCustomer]:
-        return list(_CUSTOMERS)
+    def get_customers(
+        self, *, customer_ids: list[str] | None = None
+    ) -> list[BCCustomer]:
+        return _filtered(_CUSTOMERS, customer_ids, lambda c: c.id)
 
     def get_customers_page(
         self,
         *,
         search: str | None = None,
         status: CustomerStatus | None = None,
+        customer_ids: list[str] | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_CUSTOMERS_PAGE_SIZE,
     ) -> BCCustomerPage:
         """Paginate the fixture list; ``cursor`` is just a stringified offset."""
-        customers = list(_CUSTOMERS)
+        customers = _filtered(_CUSTOMERS, customer_ids, lambda c: c.id)
 
         if search:
             needle = search.casefold()
@@ -129,17 +132,18 @@ class MockBusinessCentralClient(BusinessCentralClient):
         return BCCustomerPage(items=page, next_cursor=next_cursor)
 
     def get_customer_refs_page(
-        self, *, page: int, page_size: int
+        self, *, page: int, page_size: int, customer_ids: list[str] | None = None
     ) -> BCCustomerRefPage:
         """Slice the fixture list by name, mirroring BC's ``$orderby``/``$top``/``$skip``."""
-        ordered = sorted(_CUSTOMERS, key=lambda c: c.name)
+        scoped = _filtered(_CUSTOMERS, customer_ids, lambda c: c.id)
+        ordered = sorted(scoped, key=lambda c: c.name)
         start = max(page - 1, 0) * page_size
         return BCCustomerRefPage(
             items=[
                 BCCustomerRef(id=c.id, name=c.name)
                 for c in ordered[start : start + page_size]
             ],
-            total_count=len(_CUSTOMERS),
+            total_count=len(ordered),
         )
 
     def get_projects(self, *, customer_ids: list[str] | None = None) -> list[BCProject]:
@@ -153,11 +157,12 @@ class MockBusinessCentralClient(BusinessCentralClient):
         entity_type: str | None = None,
         status: ProjectStatus | None = None,
         customer_id: str | None = None,
+        customer_ids: list[str] | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
     ) -> BCProjectPage:
         """Paginate the fixture list; ``cursor`` is just a stringified offset."""
-        projects = list(_PROJECTS)
+        projects = _filtered(_PROJECTS, customer_ids, lambda p: p.customer_id)
 
         if search:
             needle = search.casefold()
@@ -194,9 +199,6 @@ class MockBusinessCentralClient(BusinessCentralClient):
 
     def get_users(self) -> list[BCUser]:
         return list(_USERS)
-
-    def get_user_setups(self) -> list[BCUserSetup]:
-        return list(_USER_SETUPS)
 
     def get_user_tasks(self) -> list[BCUserTask]:
         return list(_USER_TASKS)
@@ -241,3 +243,6 @@ class MockBusinessCentralClient(BusinessCentralClient):
 
     def get_resources(self) -> list[BCResource]:
         return list(_RESOURCES)
+
+    def get_customer_resources(self) -> list[BCCustomerResource]:
+        return list(_CUSTOMER_RESOURCES)

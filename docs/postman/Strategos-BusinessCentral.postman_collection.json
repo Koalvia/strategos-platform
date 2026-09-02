@@ -418,6 +418,20 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "List Customer Resources",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/customersResources",
+              "host": ["{{baseUrl}}"],
+              "path": ["customersResources"]
+            },
+            "description": "Which customers are assigned to which resource: `{customerNo, resourceNo}`. Note the entity name is `customersResources` (plural \"customers\"). Together with `resources.email` (the login match) and `resources.manageAllCustomers` (full access), this is what scopes Clientes/Proyectos per user — see app/core/visibility.py.\n\nThe former `userSetups` entity has been withdrawn from this API (it now returns 404) and `manageAllCustomers` moved onto `resources`."
+          },
+          "response": []
         }
       ]
     },

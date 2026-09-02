@@ -163,18 +163,8 @@ class BCUser(BaseModel):
     id: str
     name: str
     email: str
-    # BC's User ID code (``userName``, e.g. "AGUSTINA"); joins to BCUserSetup.
+    # BC's User ID code (``userName``, e.g. "AGUSTINA").
     user_name: str = ""
-
-
-class BCUserSetup(BaseModel):
-    """One user's permission setup (BC ``GET /userSetups``).
-
-    ``user_id`` is the BC User ID code, joined to :attr:`BCUser.user_name`.
-    """
-
-    user_id: str
-    manage_all_customers: bool = False
 
 
 class BCUserTask(BaseModel):
@@ -351,13 +341,21 @@ class BCTimeSheetPostingEntry(BaseModel):
 
 
 class BCResource(BaseModel):
-    """A billable resource (BC ``GET /resources``).
+    """A person's resource card (BC ``GET /resources``); ``id`` is BC ``no``.
 
-    Read-through only for now (used by a future margin/hours feature).
-    ``id`` is BC ``no``.
+    ``email`` links them to their login; ``manage_all_customers`` grants all customers.
     """
 
     id: str
     name: str
+    email: str = ""
+    manage_all_customers: bool = False
     unit_cost: float = 0.0
     unit_price: float = 0.0
+
+
+class BCCustomerResource(BaseModel):
+    """A customer assigned to a resource (BC ``GET /customersResources``)."""
+
+    customer_id: str
+    resource_id: str

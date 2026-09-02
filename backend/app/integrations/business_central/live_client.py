@@ -5,9 +5,10 @@
 against BC's real REST API (Dynamics 365 Business Central, the Strategos custom
 API published by Becentis — see ``docs/postman/``).
 
-``customers``, ``projects``, ``users``, ``userSetups``, ``obligations`` and
-``projectObligations`` are wired up: their payloads are BC's native entities, so
-this client does the narrowing down to the transport DTOs. ``obligation`` now carries ``periodicity``
+``customers``, ``projects``, ``users``, ``resources``, ``customersResources``,
+``obligations`` and ``projectObligations`` are wired up: their payloads are BC's
+native entities, so this client narrows them down to the transport DTOs.
+``obligation`` now carries ``periodicity``
 and ``dueDateRule`` and ``projectObligation`` now carries ``subject``, ``dueDate``
 and ``submissionDate``, so those fields are mapped through. ``status`` has no BC
 source (Strategos derives it), and an instance BC still returns without a
@@ -27,9 +28,8 @@ client's fixtures are shaped to the same DTOs and unblock the rest of the stack.
 
 Auth is OAuth2 client-credentials against Azure AD. The access token is cached in
 memory and only re-requested once it is close to expiry, so a burst of reads
-authenticates once. OData ``{"value": [...]}`` envelopes are unwrapped and
-``@odata.nextLink`` is followed until exhausted (the firm has a few hundred
-customers/projects, so a single page cannot be assumed).
+authenticates once. OData ``{"value": [...]}`` envelopes are unwrapped; this tenant
+never sends an ``@odata.nextLink``, so listings page by ``$skip`` (``_offset_page``).
 """
 
 import base64
@@ -50,6 +50,7 @@ from app.integrations.business_central.models import (
     BCCustomerPage,
     BCCustomerRef,
     BCCustomerRefPage,
+    BCCustomerResource,
     BCJobLedgerEntry,
     BCObligation,
     BCProject,
@@ -62,7 +63,6 @@ from app.integrations.business_central.models import (
     BCSalesInvoiceLine,
     BCTimeSheetPostingEntry,
     BCUser,
-    BCUserSetup,
     BCUserTask,
     CustomerStatus,
     ProjectStatus,
@@ -119,19 +119,30 @@ def _parse_float(value) -> float:
     return float(value)
 
 
-def _encode_cursor(next_link: str) -> str:
-    """Wrap a BC ``@odata.nextLink`` as an opaque cursor.
-
-    Callers (the frontend, in particular) never need BC's actual URL shape —
-    base64-encoding it keeps the tenant/company/API-group details out of the
-    network tab without pretending this is real encryption.
-    """
-    return base64.urlsafe_b64encode(next_link.encode()).decode()
+# Every listing pages by offset: this tenant never sends an @odata.nextLink, and a
+# batched scoped read could not ride one anyway. Base64 only keeps it opaque.
+_OFFSET_PREFIX = "offset:"
 
 
-def _decode_cursor(cursor: str) -> str:
-    """Reverse :func:`_encode_cursor` back to BC's absolute ``nextLink`` URL."""
-    return base64.urlsafe_b64decode(cursor.encode()).decode()
+def _encode_offset(offset: int) -> str:
+    """Wrap a page offset as an opaque cursor."""
+    return base64.urlsafe_b64encode(f"{_OFFSET_PREFIX}{offset}".encode()).decode()
+
+
+def _decode_offset(cursor: str | None) -> int:
+    """Read an offset cursor, treating anything unexpected as the first page."""
+    if not cursor:
+        return 0
+    try:
+        text = base64.urlsafe_b64decode(cursor.encode()).decode()
+    except Exception:
+        return 0
+    if not text.startswith(_OFFSET_PREFIX):
+        return 0
+    try:
+        return max(int(text[len(_OFFSET_PREFIX) :]), 0)
+    except ValueError:
+        return 0
 
 
 def _escape_odata_literal(value: str) -> str:
@@ -282,19 +293,54 @@ class LiveBusinessCentralClient(BusinessCentralClient):
             return []
         return self._get_all_by_ids(entity, field, ids, extra_filter=extra_filter)
 
+    def _offset_page(
+        self,
+        entity: str,
+        *,
+        offset: int,
+        page_size: int,
+        extra_filter: str | None = None,
+    ) -> tuple[list[dict], bool]:
+        """Read one ``$skip``/``$top`` page of ``entity``, plus whether more rows follow.
+
+        ``$orderby`` is required: OData leaves a ``$skip`` window's order undefined, and
+        an unstable one repeats or drops rows. One row past the page is the "more" probe.
+        """
+        params = {
+            "$orderby": "no",
+            "$skip": str(max(offset, 0)),
+            "$top": str(page_size + 1),
+        }
+        if extra_filter:
+            params["$filter"] = extra_filter
+
+        response = self._http.get(
+            f"{self._base_url}/{entity}",
+            headers={
+                "Authorization": f"Bearer {self._get_token()}",
+                "Accept": "application/json",
+            },
+            params=params,
+        )
+        response.raise_for_status()
+        rows = response.json().get("value", [])
+        return rows[:page_size], len(rows) > page_size
+
     # -- Implemented entities ---------------------------------------------------
 
-    def get_customers(self) -> list[BCCustomer]:
+    def get_customers(
+        self, *, customer_ids: list[str] | None = None
+    ) -> list[BCCustomer]:
         """Return all customers, mapped from BC's native ``customer`` entity.
 
-        Fetches every project company-wide to compute ``active_project_count``
-        — appropriate here since every customer is being returned anyway. Used
-        for full id -> name lookups elsewhere (``projects``/``obligations``
-        services); the paginated, filtered directory listing is
-        ``get_customers_page``.
+        ``customer_ids`` scopes both reads — the customers and the projects behind
+        ``active_project_count`` — so a scoped call never sweeps the whole company.
         """
+        if customer_ids is not None and not customer_ids:
+            return []
+
         active_projects_by_customer: dict[str, int] = {}
-        for project in self.get_projects():
+        for project in self.get_projects(customer_ids=customer_ids):
             if project.status is ProjectStatus.active:
                 active_projects_by_customer[project.customer_id] = (
                     active_projects_by_customer.get(project.customer_id, 0) + 1
@@ -302,7 +348,7 @@ class LiveBusinessCentralClient(BusinessCentralClient):
 
         return [
             self._map_customer_row(row, active_projects_by_customer)
-            for row in self._get_all("customers")
+            for row in self._rows_scoped_by_ids("customers", "no", customer_ids)
         ]
 
     def get_customers_page(
@@ -310,45 +356,26 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         *,
         search: str | None = None,
         status: CustomerStatus | None = None,
+        customer_ids: list[str] | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_CUSTOMERS_PAGE_SIZE,
     ) -> BCCustomerPage:
-        """Return one page of customers, filtering server-side via OData ``$filter``.
+        """Return one page of customers.
 
-        ``search``/``status`` are translated into a BC ``$filter`` expression
-        (see ``_customers_filter``) so the filter covers every customer BC
-        holds, not just whatever has already been paged in. This leans on the
-        standard OData v4 query capabilities (``$filter``/``contains``) that
-        BC's platform exposes for any API page — the same layer that already
-        gives us ``@odata.nextLink`` pagination — but it hasn't been exercised
-        against the real BC tenant yet, so treat it as pending live
-        verification like the other BC specifics noted in this module's
-        docstring.
-
-        ``active_project_count`` is computed only for this page's customers
-        (via a ``billToCustomerNo`` filter scoped to their ids), not a
-        company-wide projects fetch, which is what keeps a page fast.
+        An unfiltered, unscoped page is one ``$skip`` window. Anything else has to be
+        materialized first, because BC rejects those filters — see ``_customer_matches``.
         """
-        headers = {
-            "Authorization": f"Bearer {self._get_token()}",
-            "Accept": "application/json",
-        }
+        if customer_ids is not None and not customer_ids:
+            return BCCustomerPage(items=[], next_cursor=None)
+        if customer_ids or search or status is not None:
+            return self._materialized_customers_page(
+                search, status, customer_ids, cursor, page_size
+            )
 
-        if cursor:
-            url = _decode_cursor(cursor)
-            params = None
-        else:
-            url = f"{self._base_url}/customers"
-            params = {"$top": str(page_size)}
-            filter_clause = self._customers_filter(search, status)
-            if filter_clause:
-                params["$filter"] = filter_clause
-
-        response = self._http.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        payload = response.json()
-        rows = payload.get("value", [])
-        next_link = payload.get("@odata.nextLink")
+        offset = _decode_offset(cursor)
+        rows, has_more = self._offset_page(
+            "customers", offset=offset, page_size=page_size
+        )
 
         active_counts = self._active_project_counts_for(
             [row["no"] for row in rows]
@@ -357,22 +384,70 @@ class LiveBusinessCentralClient(BusinessCentralClient):
 
         return BCCustomerPage(
             items=customers,
-            next_cursor=_encode_cursor(next_link) if next_link else None,
+            next_cursor=_encode_offset(offset + page_size) if has_more else None,
+        )
+
+    def _materialized_customers_page(
+        self,
+        search: str | None,
+        status: CustomerStatus | None,
+        customer_ids: list[str] | None,
+        cursor: str | None,
+        page_size: int,
+    ) -> BCCustomerPage:
+        """Read the rows this caller may see, filter them here, then slice one page.
+
+        ``customer_ids`` is read in batches (one clause per id would risk HTTP 414);
+        ``None`` reads the table. Sorted by ``no``, matching the ``$orderby`` above.
+        """
+        rows = sorted(
+            (
+                row
+                for row in self._rows_scoped_by_ids("customers", "no", customer_ids)
+                if self._customer_matches(row, search, status)
+            ),
+            key=lambda row: row.get("no", ""),
+        )
+        offset = _decode_offset(cursor)
+        page_rows = rows[offset : offset + page_size]
+
+        active_counts = self._active_project_counts_for([r["no"] for r in page_rows])
+        return BCCustomerPage(
+            items=[self._map_customer_row(r, active_counts) for r in page_rows],
+            next_cursor=(
+                _encode_offset(offset + page_size)
+                if offset + page_size < len(rows)
+                else None
+            ),
         )
 
     def get_customer_refs_page(
-        self, *, page: int, page_size: int
+        self, *, page: int, page_size: int, customer_ids: list[str] | None = None
     ) -> BCCustomerRefPage:
         """Return one name-ordered page of customer ids/names, plus the total.
-        paging still falls back to BC's own stable
-        order, so no customer is duplicated or skipped — only the alphabetical
-        presentation would be lost.
+
+        A ``customer_ids`` scope is read in batches and sliced in memory, so the total is
+        the rows actually found rather than the number of ids asked for.
         """
+        if customer_ids is not None and not customer_ids:
+            return BCCustomerRefPage(items=[], total_count=0)
+
+        if customer_ids:
+            rows = self._rows_scoped_by_ids("customers", "no", customer_ids)
+            ordered = sorted(rows, key=lambda r: r.get("name", ""))
+            start = max(page - 1, 0) * page_size
+            window = ordered[start : start + page_size]
+            return BCCustomerRefPage(
+                items=[
+                    BCCustomerRef(id=r["no"], name=r.get("name", "")) for r in window
+                ],
+                total_count=len(ordered),
+            )
+
         headers = {
             "Authorization": f"Bearer {self._get_token()}",
             "Accept": "application/json",
         }
-
         response = self._http.get(
             f"{self._base_url}/customers",
             headers=headers,
@@ -438,27 +513,21 @@ class LiveBusinessCentralClient(BusinessCentralClient):
                 counts[customer_id] = counts.get(customer_id, 0) + 1
         return counts
 
-    @staticmethod
-    def _customers_filter(
-        search: str | None, status: CustomerStatus | None
-    ) -> str | None:
-        """Build the OData ``$filter`` for the customers directory's search/status.
+    def _customer_matches(
+        self, row: dict, search: str | None, status: CustomerStatus | None
+    ) -> bool:
+        """Apply the directory's search/status to one raw row, in memory.
 
-        ``status`` mirrors ``_clean_option``'s dual blank-Option sentinel
-        (``""``/``_x0020_``) so "Activo" matches either representation BC may
-        send back for an unblocked customer.
+        BC cannot do either: it answers 501 to an ``or`` of ``contains`` across two
+        fields and 400 to a ``blocked`` comparison. Matching here is also
+        case-insensitive, which ``contains`` is not.
         """
-        clauses: list[str] = []
         if search:
-            needle = _escape_odata_literal(search)
-            clauses.append(
-                f"(contains(name,'{needle}') or contains(vatRegistrationNo,'{needle}'))"
-            )
-        if status is CustomerStatus.active:
-            clauses.append("(blocked eq '' or blocked eq '_x0020_')")
-        elif status is CustomerStatus.inactive:
-            clauses.append("(blocked ne '' and blocked ne '_x0020_')")
-        return " and ".join(clauses) if clauses else None
+            needle = search.casefold()
+            haystacks = (row.get("name", ""), row.get("vatRegistrationNo", ""))
+            if not any(needle in (value or "").casefold() for value in haystacks):
+                return False
+        return status is None or self._map_customer_status(row.get("blocked")) is status
 
     def get_projects(self, *, customer_ids: list[str] | None = None) -> list[BCProject]:
         """Return all projects, mapped from BC's native ``project`` (Job) entity.
@@ -484,51 +553,74 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         entity_type: str | None = None,
         status: ProjectStatus | None = None,
         customer_id: str | None = None,
+        customer_ids: list[str] | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
     ) -> BCProjectPage:
-        """Return one page of projects, filtering server-side via OData ``$filter``.
+        """Return one page of projects.
 
-        ``search``/``status``/``customer_id`` are translated into a BC
-        ``$filter`` expression (see ``_projects_filter``), the same "relies on
-        standard OData v4 query capabilities, pending live verification"
-        caveat as ``get_customers_page`` applies here too.
-
-        ``project_type``/``entity_type`` have no BC source field yet (see
-        ``BCProject``) — every live row leaves them unset, so a page can never
-        match a specific requested value (this mirrors ``get_customers``'s
-        existing in-memory filtering, which already excludes every live row
-        the same way). Rather than issue a request BC can't filter on and
-        that would come back empty anyway, this short-circuits to an empty
-        page whenever either is given.
+        ``project_type``/``entity_type`` have no BC source field, so asking for either
+        short-circuits to an empty page, continuations included.
         """
-        if not cursor and (project_type or entity_type):
+        if project_type or entity_type:
             return BCProjectPage(items=[], next_cursor=None)
+        if customer_ids is not None and not customer_ids:
+            return BCProjectPage(items=[], next_cursor=None)
+        if customer_ids or customer_id or search or status is not None:
+            return self._materialized_projects_page(
+                search, status, customer_id, customer_ids, cursor, page_size
+            )
 
-        headers = {
-            "Authorization": f"Bearer {self._get_token()}",
-            "Accept": "application/json",
-        }
-
-        if cursor:
-            url = _decode_cursor(cursor)
-            params = None
-        else:
-            url = f"{self._base_url}/projects"
-            params = {"$top": str(page_size)}
-            filter_clause = self._projects_filter(search, status, customer_id)
-            if filter_clause:
-                params["$filter"] = filter_clause
-
-        response = self._http.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        payload = response.json()
-        rows = payload.get("value", [])
-        next_link = payload.get("@odata.nextLink")
+        offset = _decode_offset(cursor)
+        rows, has_more = self._offset_page(
+            "projects", offset=offset, page_size=page_size
+        )
 
         return BCProjectPage(
             items=[self._map_project_row(row) for row in rows],
-            next_cursor=_encode_cursor(next_link) if next_link else None,
+            next_cursor=_encode_offset(offset + page_size) if has_more else None,
+        )
+
+    def _materialized_projects_page(
+        self,
+        search: str | None,
+        status: ProjectStatus | None,
+        customer_id: str | None,
+        customer_ids: list[str] | None,
+        cursor: str | None,
+        page_size: int,
+    ) -> BCProjectPage:
+        """Read the projects this caller may see, filter them here, then slice one page.
+
+        A ``customer_id`` narrows the read to that customer — ``billToCustomerNo eq`` is
+        the one filter BC does honour — and can never widen the caller's scope.
+        """
+        wanted = customer_ids
+        if customer_id is not None:
+            if customer_ids is not None and customer_id not in customer_ids:
+                return BCProjectPage(items=[], next_cursor=None)
+            wanted = [customer_id]
+
+        rows = sorted(
+            (
+                row
+                for row in self._rows_scoped_by_ids(
+                    "projects", "billToCustomerNo", wanted
+                )
+                if self._project_matches(row, search, status)
+            ),
+            key=lambda row: row.get("no", ""),
+        )
+        offset = _decode_offset(cursor)
+        page_rows = rows[offset : offset + page_size]
+
+        return BCProjectPage(
+            items=[self._map_project_row(r) for r in page_rows],
+            next_cursor=(
+                _encode_offset(offset + page_size)
+                if offset + page_size < len(rows)
+                else None
+            ),
         )
 
     def _map_project_row(self, row: dict) -> BCProject:
@@ -542,31 +634,18 @@ class LiveBusinessCentralClient(BusinessCentralClient):
             status=self._map_project_status(row.get("status")),
         )
 
-    @staticmethod
-    def _projects_filter(
-        search: str | None,
-        status: ProjectStatus | None,
-        customer_id: str | None = None,
-    ) -> str | None:
-        """Build the OData ``$filter`` for the projects directory's search/status/customer.
+    def _project_matches(
+        self, row: dict, search: str | None, status: ProjectStatus | None
+    ) -> bool:
+        """Apply the directory's search/status to one raw row, in memory.
 
-        ``status`` mirrors ``_map_project_status``: only ``Completed`` (case-
-        insensitively) means Inactivo, so "Activo" excludes just that value
-        rather than matching a specific "Open" one. ``customer_id`` matches
-        ``billToCustomerNo`` exactly, the same field ``_active_project_counts_for``
-        filters on.
+        BC answers 400 to a ``tolower(status)`` comparison, and its ``contains`` is
+        case-sensitive. ``status`` follows ``_map_project_status``: only Completed is
+        Inactivo.
         """
-        clauses: list[str] = []
-        if search:
-            needle = _escape_odata_literal(search)
-            clauses.append(f"contains(description,'{needle}')")
-        if customer_id:
-            clauses.append(f"billToCustomerNo eq '{_escape_odata_literal(customer_id)}'")
-        if status is ProjectStatus.active:
-            clauses.append("tolower(status) ne 'completed'")
-        elif status is ProjectStatus.inactive:
-            clauses.append("tolower(status) eq 'completed'")
-        return " and ".join(clauses) if clauses else None
+        if search and search.casefold() not in (row.get("description") or "").casefold():
+            return False
+        return status is None or self._map_project_status(row.get("status")) is status
 
     def get_customer_names(self, customer_ids: list[str]) -> dict[str, str]:
         """Return ``{customer_id: name}`` for just ``customer_ids``.
@@ -604,23 +683,23 @@ class LiveBusinessCentralClient(BusinessCentralClient):
             )
         return users
 
-    def get_user_setups(self) -> list[BCUserSetup]:
-        """Return every user's permission setup, mapped from BC ``userSetups``.
+    def get_customer_resources(self) -> list[BCCustomerResource]:
+        """Return the customer/resource assignments, from BC ``customersResources``.
 
-        A BC failure here would silently restrict the whole Usuarios directory,
-        so it is logged and degraded to ``[]`` rather than raised: callers apply
-        their own restrictive default (see ``app.domains.users.service``).
+        Degraded to ``[]`` on failure so callers apply their own default.
         """
         try:
-            rows = self._get_all("userSetups")
+            rows = self._get_all("customersResources")
         except httpx.HTTPError:
-            logger.warning("Business Central userSetups read failed", exc_info=True)
+            logger.warning(
+                "Business Central customersResources read failed", exc_info=True
+            )
             return []
 
         return [
-            BCUserSetup(
-                user_id=(row.get("userID") or "").strip(),
-                manage_all_customers=bool(row.get("manageAllCustomers", False)),
+            BCCustomerResource(
+                customer_id=(row.get("customerNo") or "").strip(),
+                resource_id=(row.get("resourceNo") or "").strip(),
             )
             for row in rows
         ]
@@ -854,11 +933,13 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         ]
 
     def get_resources(self) -> list[BCResource]:
-        """Return billable resources from BC's ``resources`` entity."""
+        """Return resource cards from BC's ``resources`` entity."""
         return [
             BCResource(
                 id=row["no"],
                 name=row.get("name", ""),
+                email=(row.get("email") or "").strip(),
+                manage_all_customers=bool(row.get("manageAllCustomers", False)),
                 unit_cost=_parse_float(row.get("unitCost")),
                 unit_price=_parse_float(row.get("unitPrice")),
             )

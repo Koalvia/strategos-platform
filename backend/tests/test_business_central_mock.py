@@ -16,6 +16,7 @@ from app.integrations.business_central import (
 )
 from app.integrations.business_central.models import (
     BCCustomer,
+    BCCustomerResource,
     BCJobLedgerEntry,
     BCObligation,
     BCProject,
@@ -27,7 +28,6 @@ from app.integrations.business_central.models import (
     BCSalesInvoiceLine,
     BCTimeSheetPostingEntry,
     BCUser,
-    BCUserSetup,
     BCUserTask,
     CustomerStatus,
     ProjectStatus,
@@ -68,6 +68,7 @@ def test_port_defines_all_expected_methods():
         "get_job_ledger_entries",
         "get_time_sheet_posting_entries",
         "get_resources",
+        "get_customer_resources",
     }
     assert expected <= BusinessCentralClient.__abstractmethods__
 
@@ -152,18 +153,46 @@ def test_get_users_count_type_and_emails(client):
 
 
 @pytest.mark.unit
-def test_get_user_setups_covers_every_user(client):
-    """Every BC user has a setup row, keyed by their ``user_name`` code."""
-    setups = client.get_user_setups()
-    assert all(isinstance(s, BCUserSetup) for s in setups)
-    assert {s.user_id for s in setups} == {u.user_name for u in client.get_users()}
+def test_resources_carry_the_identity_fields(client):
+    """Every resource has the email the login matches on, and the permission flag."""
+    resources = client.get_resources()
+    assert all(isinstance(r, BCResource) for r in resources)
+    assert all(r.email.endswith("@estrategos.ad") for r in resources)
 
 
 @pytest.mark.unit
-def test_get_user_setups_grants_only_the_director(client):
-    """Only Marc Solé (Soci Director) manages all customers, as in live BC."""
-    granted = {s.user_id for s in client.get_user_setups() if s.manage_all_customers}
-    assert granted == {"MARC"}
+def test_only_the_director_manages_all_customers(client):
+    """One manager, mirroring the live tenant's single privileged resource."""
+    granted = {r.id for r in client.get_resources() if r.manage_all_customers}
+    assert granted == {"RES-01"}
+
+
+@pytest.mark.unit
+def test_customer_resources_point_at_real_rows(client):
+    """Each assignment names an existing resource and an existing customer."""
+    assignments = client.get_customer_resources()
+    assert all(isinstance(a, BCCustomerResource) for a in assignments)
+
+    resource_ids = {r.id for r in client.get_resources()}
+    customer_ids = {c.id for c in client.get_customers()}
+    assert {a.resource_id for a in assignments} <= resource_ids
+    assert {a.customer_id for a in assignments} <= customer_ids
+
+
+@pytest.mark.unit
+def test_customer_scoped_reads_narrow_the_fixtures(client):
+    """``customer_ids`` narrows every customer/project read; ``[]`` returns nothing."""
+    assert {c.id for c in client.get_customers(customer_ids=["cust-001"])} == {"cust-001"}
+    assert client.get_customers(customer_ids=[]) == []
+
+    page = client.get_customers_page(customer_ids=["cust-001", "cust-002"])
+    assert {c.id for c in page.items} == {"cust-001", "cust-002"}
+
+    projects = client.get_projects_page(customer_ids=["cust-003"], page_size=100)
+    assert {p.customer_id for p in projects.items} == {"cust-003"}
+
+    refs = client.get_customer_refs_page(page=1, page_size=10, customer_ids=["cust-001"])
+    assert refs.total_count == 1
 
 
 @pytest.mark.unit

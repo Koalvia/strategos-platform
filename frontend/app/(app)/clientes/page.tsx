@@ -22,6 +22,7 @@ export default function ClientesPage() {
   const [status, setStatus] = useState<StatusFilter>("all")
   const [customers, setCustomers] = useState<Customer[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [noAssignedCustomers, setNoAssignedCustomers] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
 
@@ -47,6 +48,7 @@ export default function ClientesPage() {
         if (result.success && result.data) {
           setCustomers(result.data.items)
           setNextCursor(result.data.nextCursor)
+          setNoAssignedCustomers(result.data.noAssignedCustomers)
         } else {
           setCustomers([])
           setNextCursor(null)
@@ -113,7 +115,11 @@ export default function ClientesPage() {
       </div>
 
       <div className="mt-6">
-        <CustomersTable customers={customers} loading={loading} />
+        <CustomersTable
+          customers={customers}
+          loading={loading}
+          noAssignedCustomers={noAssignedCustomers}
+        />
       </div>
 
       {!loading && nextCursor && (

@@ -1,5 +1,6 @@
 [
-  { "id": "RES-01", "name": "Marc Solé", "unit_cost": 25.0, "unit_price": 60.0 },
-  { "id": "RES-02", "name": "Jordi Vila", "unit_cost": 20.0, "unit_price": 50.0 },
-  { "id": "RES-03", "name": "Laura Puig", "unit_cost": 22.0, "unit_price": 55.0 }
+  { "id": "RES-01", "name": "Marc Solé", "email": "marc@estrategos.ad", "manage_all_customers": true, "unit_cost": 25.0, "unit_price": 60.0 },
+  { "id": "RES-02", "name": "Jordi Vila", "email": "jordi@estrategos.ad", "manage_all_customers": false, "unit_cost": 20.0, "unit_price": 50.0 },
+  { "id": "RES-03", "name": "Laura Puig", "email": "laura@estrategos.ad", "manage_all_customers": false, "unit_cost": 22.0, "unit_price": 55.0 },
+  { "id": "RES-04", "name": "Anna Ferrer", "email": "anna@estrategos.ad", "manage_all_customers": false, "unit_cost": 21.0, "unit_price": 52.0 }
 ]

@@ -174,7 +174,7 @@ class _SingleCustomerBCClient:
         self._customer = customer
         self._projects = projects
 
-    def get_customers(self):
+    def get_customers(self, **kwargs):
         return [self._customer]
 
     def get_projects(self):
