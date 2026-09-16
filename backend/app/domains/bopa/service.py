@@ -370,10 +370,11 @@ class BopaService:
         """Search documents that genuinely mention a client's name, NIF or projects.
 
         A document matches only when one of the client's terms appears as complete
-        word(s) — the same whole-word rule the BOPA analyzer uses (see
-        ``app.domains.bopa.matching``) — so this never surfaces a loose-substring
-        false positive (a homonym, or a fragment inside a larger word) for an
-        entity that is not the client.
+        word(s) outside the document's signature block — the same rule the BOPA
+        analyzer uses (see ``app.domains.bopa.matching``) — so this never surfaces
+        a loose-substring false positive (a homonym, or a fragment inside a larger
+        word) for an entity that is not the client, nor an edict the client merely
+        signed as an official.
 
         Implemented as a cheap DB-side ILIKE **substring prefilter** (whole-word
         matches are a subset, so it drops no real match) followed by the
@@ -418,10 +419,8 @@ class BopaService:
         # its body is released instead of piling up in the session's identity map.
         matched: list[DocumentSummary] = []
         for doc in stream:
-            if any(
-                term_in_text(term, searchable_text(doc.title, doc.html_content))
-                for term in terms
-            ):
+            text = searchable_text(doc.title, doc.html_content)
+            if any(term_in_text(term, text) for term in terms):
                 matched.append(DocumentSummary.model_validate(doc))
             self.db.expunge(doc)
 

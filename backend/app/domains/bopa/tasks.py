@@ -26,7 +26,10 @@ def _match_document(doc, customers, projects) -> list[BopaMatch]:
     NIF is the fallback label when only the NIF hits. Projects match on their
     name. This word-boundary rule is the guarantee that an alert is genuinely
     about one of our customers: a loose-substring false positive never becomes a
-    match, so it is never turned into an alert and never gets a link.
+    match, so it is never turned into an alert and never gets a link. The
+    document's closing signature block (``<p class="signatura">``) is excluded
+    from the text, so a customer who only *signs* the edict as an official does
+    not match either (see ``searchable_text``).
 
     Deduplicates on ``(customer_id, document_id)`` — the
     ``uq_bopa_match_customer_doc`` constraint allows only one match per customer
