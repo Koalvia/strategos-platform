@@ -184,6 +184,7 @@ def scan_bopa(
 
     return ScanResult(
         bulletins_synced=sync_result.bulletins_synced,
+        bulletins_failed=sync_result.bulletins_failed,
         documents_synced=sync_result.documents_synced,
         documents_failed=sync_result.documents_failed,
         matches_created=matches_created,

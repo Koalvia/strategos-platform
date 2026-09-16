@@ -65,6 +65,7 @@ def test_scan_runs_pipeline_and_returns_result(client, _recorded_pipeline):
     body = resp.json()
     assert body == {
         "bulletins_synced": 1,
+        "bulletins_failed": 0,
         "documents_synced": 3,
         "documents_failed": 0,
         "matches_created": 2,
@@ -86,6 +87,7 @@ def test_scan_scoped_to_customer_runs_only_customer_analyzer(client, _recorded_p
     body = resp.json()
     assert body == {
         "bulletins_synced": 1,
+        "bulletins_failed": 0,
         "documents_synced": 3,
         "documents_failed": 0,
         "matches_created": 5,

@@ -83,7 +83,8 @@ def sync_bopa_daily():
         service = BopaService(db=db, bopa_client=get_bopa_client())
         result = service.sync_latest()
         logger.info(
-            f"BOPA sync: {result.bulletins_synced} bulletins, "
+            f"BOPA sync: {result.bulletins_synced} bulletins "
+            f"({result.bulletins_failed} failed), "
             f"{result.documents_synced} documents "
             f"({result.documents_failed} failed)"
         )

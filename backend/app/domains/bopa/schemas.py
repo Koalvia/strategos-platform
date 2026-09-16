@@ -81,9 +81,15 @@ class BulletinDetail(BulletinSummary):
 
 
 class SyncResult(BaseModel):
-    """Outcome of one :meth:`BopaService.sync_latest` run."""
+    """Outcome of one :meth:`BopaService.sync_latest` run.
+
+    ``bulletins_failed`` counts issues whose upstream payload could not be fetched
+    or validated; each is logged and skipped (and retried on the next run) rather
+    than aborting the sync for the issues after it.
+    """
 
     bulletins_synced: int
+    bulletins_failed: int = 0
     documents_synced: int
     documents_failed: int
 

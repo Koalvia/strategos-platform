@@ -6,13 +6,18 @@ transport objects for the integration layer, not the shapes Strategos exposes to
 its own frontend, and they validate directly against the raw API JSON via
 ``validation_alias`` on each field.
 
-Two upstream quirks are normalised here so callers never see them:
+Three upstream quirks are normalised here so callers never see them:
 
 * ``isExtra`` is a JSON boolean on the bulletin-listing endpoint but the string
   ``"True"``/``"False"`` on the documents endpoint — both collapse to a real
   ``bool`` (see :func:`_normalize_bool`).
 * ``sumari`` (a document's title) is percent-encoded UTF-8 (``%c3%ba`` -> ``ú``)
   — it is decoded with :func:`urllib.parse.unquote` before being stored.
+* the classification labels (``organisme``, ``organismePare``, ``tema``,
+  ``temaPare``) are occasionally ``null`` for a document. Bulletin 89/2026
+  shipped one such document; with the labels declared as required strings the
+  whole issue failed validation, and every later issue stayed out of the
+  platform for six weeks. They are coalesced to ``""`` instead.
 """
 
 import re
@@ -84,10 +89,12 @@ class BopaDocument(BaseModel):
     storage_name: str = Field(validation_alias="metadata_storage_name")
     storage_size: int = Field(validation_alias="metadata_storage_size")
     source_url: str = Field(validation_alias="metadata_storage_path")
-    organisme: str = Field(validation_alias="organisme")
-    organisme_pare: str = Field(validation_alias="organismePare")
-    tema: str = Field(validation_alias="tema")
-    tema_pare: str = Field(validation_alias="temaPare")
+    # Classification labels: ``null`` upstream (or a missing key) becomes ``""``
+    # so one such document cannot fail validation for its whole bulletin.
+    organisme: str = Field("", validation_alias="organisme")
+    organisme_pare: str = Field("", validation_alias="organismePare")
+    tema: str = Field("", validation_alias="tema")
+    tema_pare: str = Field("", validation_alias="temaPare")
     file_type: str = Field(validation_alias="fileType")
     published_at: datetime = Field(validation_alias="dataPublicacioButlleti")
     article_date: datetime = Field(validation_alias="dataArticle")
@@ -101,6 +108,14 @@ class BopaDocument(BaseModel):
     @classmethod
     def _coerce_is_extra(cls, value: object) -> object:
         return _normalize_bool(value)
+
+    @field_validator(
+        "organisme", "organisme_pare", "tema", "tema_pare", mode="before"
+    )
+    @classmethod
+    def _coalesce_null_label(cls, value: object) -> object:
+        """Turn a ``null`` classification label into ``""`` (see module docstring)."""
+        return "" if value is None else value
 
     @field_validator("title", mode="before")
     @classmethod

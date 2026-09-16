@@ -16,7 +16,9 @@ written once and never rewritten. A bulletin that is already complete (its store
 API call. A bulletin that is short — e.g. because a prior run lost documents to a
 transient fetch/decode failure (see #69) — is revisited: only the missing
 documents are inserted, guarded by the ``(bulletin_id, document_name)`` unique
-constraint so re-runs stay idempotent.
+constraint so re-runs stay idempotent. A bulletin whose upstream payload cannot
+be fetched or validated is logged, counted as failed and skipped, so one bad
+issue never blocks the ones published after it.
 """
 
 from datetime import date, timedelta
@@ -69,7 +71,10 @@ class BopaService:
         bulletin row itself is not recreated, so such a backfill does not count as
         a new ``bulletins_synced``. Each bulletin is committed on its own so a
         crash mid-catch-up keeps earlier bulletins' progress, and a single failing
-        document download is logged and counted without aborting the rest.
+        document download is logged and counted without aborting the rest. A
+        bulletin that fails as a whole (its documents call raises or does not
+        validate) is logged, rolled back and counted in ``bulletins_failed``; the
+        run continues with the next issue and the failed one is retried next time.
         """
         # bopa.ad's own homepage queries with "tomorrow" so a bulletin published
         # today is never missed by the API's rolling window (see #48).
@@ -87,68 +92,102 @@ class BopaService:
         }
 
         bulletins_synced = 0
+        bulletins_failed = 0
         documents_synced = 0
         documents_failed = 0
 
         for (year, num), item in sorted(deduped.items()):
             stored = existing.get((year, num))
-            if stored is not None:
-                # Immutable issue: the row stays, but a prior run may have stored
-                # fewer documents than the issue has (#69). Backfill only the
-                # shortfall; a bulletin already complete needs no API call. The
-                # "totalCount can exceed documents returned" quirk means such a
-                # bulletin stays perennially short and is re-listed each run, but
-                # the per-name skip below keeps that a cheap no-op.
-                if stored.document_count >= stored.total_document_count:
-                    continue
-                page = self.bopa_client.get_documents_by_bopa(year, num)
-                present = {doc.document_name for doc in stored.documents}
-                synced, failed = self._persist_documents(
-                    stored, year, num, page.documents, skip_names=present
-                )
-                self.db.commit()
-                documents_synced += synced
-                documents_failed += failed
+            if (
+                stored is not None
+                and stored.document_count >= stored.total_document_count
+            ):
+                # Immutable issue already complete: no API call needed.
                 continue
-
-            page = self.bopa_client.get_documents_by_bopa(year, num)
-            if page.total_count != len(page.documents):
-                logger.warning(
-                    "BOPA bulletin %s/%s totalCount=%s but %s documents returned",
-                    year,
-                    num,
-                    page.total_count,
-                    len(page.documents),
-                )
-
-            bulletin = BopaBulletin(
-                year=year,
-                num=num,
-                is_extra=item.is_extra,
-                published_at=item.published_at,
-                total_document_count=page.total_count,
-                sumari_pdf_url=self.bopa_client.build_sumari_pdf_url(year, num),
-            )
-            self.db.add(bulletin)
-            self.db.flush()  # assign bulletin.id for the documents' FK
-
-            synced, failed = self._persist_documents(
-                bulletin, year, num, page.documents, skip_names=set()
-            )
+            try:
+                created, synced, failed = self._sync_bulletin(year, num, item, stored)
+            except Exception:
+                # One bad issue must not block the ones after it. Bulletin 89/2026
+                # shipped a document whose payload did not validate, and with the
+                # exception propagating out of this loop every later issue stayed
+                # unsynced for six weeks. Drop any partial rows, log, and go on;
+                # the failed issue is re-listed and retried on the next run.
+                self.db.rollback()
+                logger.exception("Failed to sync BOPA bulletin %s/%s", year, num)
+                bulletins_failed += 1
+                continue
+            if created is not None:
+                existing[(year, num)] = created
+                bulletins_synced += 1
             documents_synced += synced
             documents_failed += failed
 
-            # Commit per bulletin, not one giant transaction: a crash part-way
-            # through a multi-bulletin catch-up keeps earlier bulletins' progress.
-            self.db.commit()
-            existing[(year, num)] = bulletin
-            bulletins_synced += 1
-
         return SyncResult(
             bulletins_synced=bulletins_synced,
+            bulletins_failed=bulletins_failed,
             documents_synced=documents_synced,
             documents_failed=documents_failed,
         )
+
+    def _sync_bulletin(
+        self,
+        year: int,
+        num: int,
+        item: BopaBulletinListItem,
+        stored: BopaBulletin | None,
+    ) -> tuple[BopaBulletin | None, int, int]:
+        """Fetch and persist one bulletin (new, or a backfill), committing it.
+
+        Returns ``(created, documents_synced, documents_failed)`` where ``created``
+        is the new :class:`BopaBulletin` row, or ``None`` when ``stored`` was
+        backfilled instead. Anything that concerns the issue as a whole — the
+        documents call, its validation, the bulletin insert — raises to the caller,
+        which isolates it per bulletin; a single document download failing is
+        handled inside :meth:`_persist_documents` and only counted.
+        """
+        if stored is not None:
+            # Immutable issue: the row stays, but a prior run may have stored
+            # fewer documents than the issue has (#69). Backfill only the
+            # shortfall. The "totalCount can exceed documents returned" quirk
+            # means such a bulletin stays perennially short and is re-listed
+            # each run, but the per-name skip keeps that a cheap no-op.
+            page = self.bopa_client.get_documents_by_bopa(year, num)
+            present = {doc.document_name for doc in stored.documents}
+            synced, failed = self._persist_documents(
+                stored, year, num, page.documents, skip_names=present
+            )
+            self.db.commit()
+            return None, synced, failed
+
+        page = self.bopa_client.get_documents_by_bopa(year, num)
+        if page.total_count != len(page.documents):
+            logger.warning(
+                "BOPA bulletin %s/%s totalCount=%s but %s documents returned",
+                year,
+                num,
+                page.total_count,
+                len(page.documents),
+            )
+
+        bulletin = BopaBulletin(
+            year=year,
+            num=num,
+            is_extra=item.is_extra,
+            published_at=item.published_at,
+            total_document_count=page.total_count,
+            sumari_pdf_url=self.bopa_client.build_sumari_pdf_url(year, num),
+        )
+        self.db.add(bulletin)
+        self.db.flush()  # assign bulletin.id for the documents' FK
+
+        synced, failed = self._persist_documents(
+            bulletin, year, num, page.documents, skip_names=set()
+        )
+
+        # Commit per bulletin, not one giant transaction: a crash part-way
+        # through a multi-bulletin catch-up keeps earlier bulletins' progress.
+        self.db.commit()
+        return bulletin, synced, failed
 
     def _persist_documents(
         self,
@@ -334,11 +373,15 @@ class BopaService:
         )
 
     def get_document_filter_options(self) -> DocumentFilterOptions:
-        """Return the sorted, deduplicated values available for each facet."""
+        """Return the sorted, deduplicated values available for each facet.
+
+        A label coalesced from an upstream ``null`` is stored as ``""`` and is not
+        offered as a filter option.
+        """
 
         def distinct_values(column) -> list[str]:
             rows = self.db.query(column).distinct().order_by(column).all()
-            return [value for (value,) in rows if value is not None]
+            return [value for (value,) in rows if value]
 
         return DocumentFilterOptions(
             organisme=distinct_values(BopaDocument.organisme),

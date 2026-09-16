@@ -173,6 +173,7 @@ def test_read_endpoints_against_synced_data(client):
     assert sync.status_code == 200
     assert sync.json() == {
         "bulletins_synced": 1,
+        "bulletins_failed": 0,
         "documents_synced": 3,
         "documents_failed": 0,
     }

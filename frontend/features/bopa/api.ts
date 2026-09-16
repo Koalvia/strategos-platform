@@ -41,6 +41,7 @@ export interface BopaFilterOptions {
 // `ScanResult` schema: the sync counts plus how many new matches were produced.
 export interface BopaScanResult {
   bulletins_synced: number
+  bulletins_failed: number
   documents_synced: number
   documents_failed: number
   matches_created: number
