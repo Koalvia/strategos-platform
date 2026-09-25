@@ -2,7 +2,8 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
-import type { ObligationStatus, ProjectObligation } from "@/lib/types"
+import type { ProjectObligation } from "@/lib/types"
+import { STATUS_BADGE, STATUS_DOT } from "@/features/obligations/status-style"
 
 interface ProximasObligacionesProps {
   // null when Business Central could not serve this section — rendered as an
@@ -26,22 +27,6 @@ function formatDate(isoDate: string | null): string {
   const [year, month, day] = isoDate.split("-")
   if (!year || !month || !day) return isoDate
   return `${day}/${month}/${year}`
-}
-
-// Status colours mirror the "Próximas obligaciones" widget in dashboard.png:
-// overdue red, upcoming amber, on-track green, undated neutral.
-const STATUS_BADGE: Record<ObligationStatus, string> = {
-  Vencido: "bg-red-100 text-red-700",
-  Próximo: "bg-amber-100 text-amber-700",
-  "Al día": "bg-green-100 text-green-700",
-  "Sin fecha": "bg-slate-100 text-slate-500",
-}
-
-const STATUS_DOT: Record<ObligationStatus, string> = {
-  Vencido: "bg-red-500",
-  Próximo: "bg-amber-500",
-  "Al día": "bg-green-500",
-  "Sin fecha": "bg-slate-400",
 }
 
 export function ProximasObligaciones({
