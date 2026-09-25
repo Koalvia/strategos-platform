@@ -109,7 +109,8 @@ def _parse_date(value: str | None) -> date | None:
     would read as a real year-1 date).
     """
     text = (value or "").strip()
-    if not text or text.startswith("0001-01-01"):
+    # The sentinel arrives as a plain date or as a datetime ("0001-01-01T00:00:00Z").
+    if not text or text == "0001-01-01" or text.startswith("0001-01-01T"):
         return None
     return date.fromisoformat(text)
 

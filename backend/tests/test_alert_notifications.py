@@ -28,7 +28,12 @@ STRANGER = "nobody@example.com"  # no BC resource
 
 @pytest.fixture
 def sent(monkeypatch):
-    """Capture every send_email call instead of hitting Resend."""
+    """Capture every send_email call instead of hitting Resend.
+
+    Also sets a test recipient: the source default is blank, and in test mode a
+    blank recipient makes the dispatcher refuse to send.
+    """
+    monkeypatch.setattr(settings, "ALERT_EMAIL_TEST_RECIPIENT", "test-inbox@koalvia.test")
     calls: list[dict] = []
 
     def _fake_send(to_email, subject, html_content, from_email=None):
@@ -178,6 +183,18 @@ def test_live_mode_sends_to_the_real_address(db_session, users, sent, monkeypatc
 @pytest.mark.integration
 def test_disabled_globally_sends_nothing(db_session, users, sent, monkeypatch):
     monkeypatch.setattr(settings, "ALERT_EMAIL_ENABLED", False)
+    _bopa_alert(db_session, "cust-001")
+
+    assert dispatch_pending_alert_emails(db_session, MockBusinessCentralClient()) == 0
+    assert sent == []
+
+
+@pytest.mark.integration
+def test_test_mode_with_blank_recipient_refuses_to_send(
+    db_session, users, sent, monkeypatch
+):
+    """Fail-safe: test mode + no recipient must not fan alerts out anywhere."""
+    monkeypatch.setattr(settings, "ALERT_EMAIL_TEST_RECIPIENT", "")
     _bopa_alert(db_session, "cust-001")
 
     assert dispatch_pending_alert_emails(db_session, MockBusinessCentralClient()) == 0

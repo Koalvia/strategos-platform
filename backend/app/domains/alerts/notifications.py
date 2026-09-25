@@ -81,6 +81,12 @@ def dispatch_pending_alert_emails(db: Session, bc_client: BusinessCentralClient)
     """
     if not settings.ALERT_EMAIL_ENABLED:
         return 0
+    if settings.ALERT_EMAIL_TEST_MODE and not settings.ALERT_EMAIL_TEST_RECIPIENT:
+        logger.error(
+            "ALERT_EMAIL_TEST_MODE is on but ALERT_EMAIL_TEST_RECIPIENT is blank; "
+            "refusing to send so alerts are not fanned out to an unintended inbox."
+        )
+        return 0
 
     pending = (
         db.query(Alert)
@@ -105,14 +111,21 @@ def dispatch_pending_alert_emails(db: Session, bc_client: BusinessCentralClient)
     sent = 0
     for alert in pending:
         category = alert_category(alert.alert_type, alert.obligation_code)
-        for email in routing.emails_for(alert.customer_id):
+        recipient_emails = routing.emails_for(alert.customer_id)
+        if not recipient_emails:
+            logger.warning(
+                "Alert %s (customer %s) has no email recipient; marking as sent.",
+                alert.id,
+                alert.customer_id,
+            )
+        for email in recipient_emails:
             user = users_by_email.get(email)
             if user is None:
                 continue  # BC contact with no app account — do not email
             if (user.id, category) in disabled:
                 continue  # opted out of this category
-            _send_one(alert, user, category)
-            sent += 1
+            if _send_one(alert, user, category):
+                sent += 1
         # Mark as emailed even if no recipient matched, so we do not re-scan it.
         alert.email_sent_at = datetime.now(timezone.utc)
 
@@ -121,8 +134,12 @@ def dispatch_pending_alert_emails(db: Session, bc_client: BusinessCentralClient)
     return sent
 
 
-def _send_one(alert: Alert, user: User, category: AlertCategory) -> None:
-    """Render and send one alert email to one recipient (test-mode aware)."""
+def _send_one(alert: Alert, user: User, category: AlertCategory) -> bool:
+    """Render and send one alert email to one recipient (test-mode aware).
+
+    Returns whether the send succeeded, so the caller counts delivered messages
+    rather than attempts.
+    """
     template_name, subject = _TEMPLATE_BY_CATEGORY[category]
     real_recipient = user.email
     context = {
@@ -144,6 +161,8 @@ def _send_one(alert: Alert, user: User, category: AlertCategory) -> None:
 
     try:
         EmailService.send_email(to_email=to_email, subject=subject, html_content=html)
+        return True
     except Exception:
         # One bad send must not abort the batch or block the dedup mark.
         logger.exception("Failed to send alert email to %s", to_email)
+        return False

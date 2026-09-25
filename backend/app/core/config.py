@@ -21,9 +21,12 @@ class Settings(BaseSettings):
     # ALERT_EMAIL_TEST_RECIPIENT with the real recipient noted, so the rollout can
     # be validated before writing to real employee mailboxes. Set to false to send
     # for real. ENABLED is the master switch (off skips sending entirely).
+    # TEST_RECIPIENT has no default on purpose: in test mode a blank recipient makes
+    # the dispatcher refuse to send (see dispatch_pending_alert_emails), so no
+    # environment accidentally fans every alert out to a hardcoded inbox.
     ALERT_EMAIL_ENABLED: bool = True
     ALERT_EMAIL_TEST_MODE: bool = True
-    ALERT_EMAIL_TEST_RECIPIENT: str = "brian.marin@koalvia.com"
+    ALERT_EMAIL_TEST_RECIPIENT: str = ""
 
     # Frontend URL for email links (verification, password reset, etc.)
     FRONTEND_URL: str = "http://localhost:3000"

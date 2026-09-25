@@ -141,5 +141,9 @@ def dispatch_alert_emails():
     db = SessionLocal()
     try:
         return dispatch_pending_alert_emails(db, get_business_central_client())
+    except Exception:
+        db.rollback()
+        logger.exception("Alert email dispatch failed")
+        raise
     finally:
         db.close()
