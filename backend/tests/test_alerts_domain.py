@@ -155,6 +155,7 @@ def test_alert_preferences_default_all_enabled(client):
         "DOCUMENT_EXPIRY": True,
         "IVA": True,
         "OBLIGATION": True,
+        "TRAFFIC_CHANGE": True,
     }
 
 

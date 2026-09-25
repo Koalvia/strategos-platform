@@ -10,6 +10,7 @@ daily task stays the single source of "today" (a timezone-aware local date, see
 from datetime import date, timedelta
 
 from app.domains.alerts.models import AlertCategory, AlertType
+from app.domains.obligations.schemas import DerivedObligationStatus
 from app.integrations.business_central.models import BCProjectObligation
 
 # How many days before its due date an obligation should notify, by BC code.
@@ -26,8 +27,20 @@ def lead_days_for(obligation_code: str | None) -> int:
     return _LEAD_DAYS_BY_CODE.get((obligation_code or "").upper(), _DEFAULT_LEAD_DAYS)
 
 
-def alert_category(alert_type: AlertType, obligation_code: str | None) -> AlertCategory:
-    """Map an alert to its email category (template + user preference key)."""
+def alert_category(
+    alert_type: AlertType,
+    obligation_code: str | None,
+    stored_category: AlertCategory | None = None,
+) -> AlertCategory:
+    """Map an alert to its email category (template + user preference key).
+
+    A ``stored_category`` set on the alert row wins: colour-change alerts reuse
+    ``AlertType.OBLIGATION`` yet must route as ``TRAFFIC_CHANGE``, which cannot be
+    derived from the BC obligation code. When it is ``None`` (BOPA and one-per-life
+    obligation alerts) the category is derived from the type and code as before.
+    """
+    if stored_category is not None:
+        return stored_category
     if alert_type is AlertType.BOPA:
         return AlertCategory.BOPA
     code = (obligation_code or "").upper()
@@ -36,6 +49,33 @@ def alert_category(alert_type: AlertType, obligation_code: str | None) -> AlertC
     if code == "IVA":
         return AlertCategory.IVA
     return AlertCategory.OBLIGATION
+
+
+# Ascending traffic-light severity. ``Sin fecha`` (undated) is deliberately absent:
+# it is off-scale, so transitions into or out of it are never a worsening.
+_TRAFFIC_SEVERITY = {
+    DerivedObligationStatus.on_track: 0,   # Al día  (green)
+    DerivedObligationStatus.upcoming: 1,   # Próximo (yellow)
+    DerivedObligationStatus.urgent: 2,     # Urgente (red)
+    DerivedObligationStatus.overdue: 3,    # Vencido (red, overdue)
+}
+
+
+def is_traffic_worsening(
+    previous: DerivedObligationStatus, current: DerivedObligationStatus
+) -> bool:
+    """Whether ``current`` is a strictly worse traffic-light state than ``previous``.
+
+    A worsening is a move to a strictly higher severity on the
+    ``Al día < Próximo < Urgente < Vencido`` scale (so ``Urgente`` -> ``Vencido``
+    counts). ``Sin fecha`` is off-scale: any transition into or out of it is never a
+    worsening, so it never emails.
+    """
+    prev = _TRAFFIC_SEVERITY.get(previous)
+    curr = _TRAFFIC_SEVERITY.get(current)
+    if prev is None or curr is None:
+        return False
+    return curr > prev
 
 
 def obligation_notification_date(

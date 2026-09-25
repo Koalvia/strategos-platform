@@ -38,6 +38,10 @@ _TEMPLATE_BY_CATEGORY = {
         "alert_obligation.html",
         "Vencimiento de obligación próximo",
     ),
+    AlertCategory.TRAFFIC_CHANGE: (
+        "alert_traffic_change.html",
+        "Cambio en el semáforo de una obligación",
+    ),
 }
 
 
@@ -110,7 +114,9 @@ def dispatch_pending_alert_emails(db: Session, bc_client: BusinessCentralClient)
 
     sent = 0
     for alert in pending:
-        category = alert_category(alert.alert_type, alert.obligation_code)
+        category = alert_category(
+            alert.alert_type, alert.obligation_code, alert.category
+        )
         recipient_emails = routing.emails_for(alert.customer_id)
         if not recipient_emails:
             logger.warning(

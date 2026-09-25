@@ -140,6 +140,7 @@ def test_worker_ready_queues_full_pipeline_chain(monkeypatch):
         "bopa.sync_daily",
         "bopa.analyze_matches",
         "alerts.generate_obligation_alerts",
+        "alerts.evaluate_traffic_transitions",
         "alerts.dispatch_alert_emails",
     ]
     # Immutable signatures so no result is passed from one step to the next.

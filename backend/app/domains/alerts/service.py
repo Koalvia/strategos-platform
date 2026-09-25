@@ -141,6 +141,39 @@ class AlertsService:
         self.db.add(alert)
         return alert
 
+    def create_for_traffic_change(
+        self,
+        customer_id: str,
+        title: str,
+        message: str,
+        obligation_code: str | None = None,
+    ) -> Alert:
+        """Stage a traffic-light colour-change alert (the caller commits).
+
+        Unlike :meth:`create_for_obligation` this leaves ``bc_obligation_id``
+        **NULL** on purpose: the ``uq_alert_bc_obligation`` unique constraint allows
+        only one alert per obligation *ever*, but a colour change may fire more than
+        once over an obligation's life (green->yellow one day, yellow->red another).
+        Idempotency instead comes from
+        :class:`~app.domains.alerts.models.ObligationTrafficState.last_status`, which
+        the caller advances so a same-day re-run stages nothing. The category is set
+        explicitly to ``TRAFFIC_CHANGE`` so the email layer routes it to its own
+        template/preference rather than the due-date obligation one. ``user_id`` is
+        left NULL — the alert is for all users.
+        """
+        alert = Alert(
+            user_id=None,
+            customer_id=customer_id,
+            alert_type=AlertType.OBLIGATION,
+            category=AlertCategory.TRAFFIC_CHANGE,
+            obligation_code=obligation_code,
+            title=title,
+            message=message,
+            status=AlertStatus.NEW,
+        )
+        self.db.add(alert)
+        return alert
+
     def get_preferences(self, user_id: int) -> dict[AlertCategory, bool]:
         """Return the user's email preference per category (default enabled).
 

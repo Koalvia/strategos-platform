@@ -68,6 +68,11 @@ class AlertCategory(enum.Enum):
     DOCUMENT_EXPIRY = "DOCUMENT_EXPIRY"
     IVA = "IVA"
     OBLIGATION = "OBLIGATION"
+    # A traffic-light colour worsening for an obligation (green->yellow->red).
+    # Reuses ``AlertType.OBLIGATION`` but is its own email template and per-user
+    # preference; it is set explicitly on the alert (``Alert.category``) because it
+    # cannot be derived from the BC obligation code like the others.
+    TRAFFIC_CHANGE = "TRAFFIC_CHANGE"
 
 
 class Alert(Base):
@@ -96,6 +101,11 @@ class Alert(Base):
     # The BC obligation code (DNI/PASSAPORT/IVA/...) for OBLIGATION alerts, so the
     # email layer picks a template/category without re-reading BC. BOPA leaves NULL.
     obligation_code = Column(String, nullable=True)
+    # Explicit email category override. NULL means "derive from type + code" (the
+    # default for BOPA and one-per-life obligation alerts); it is set to
+    # ``TRAFFIC_CHANGE`` for colour-change alerts, which reuse
+    # ``AlertType.OBLIGATION`` but must not be routed like a due-date obligation.
+    category = Column(Enum(AlertCategory), nullable=True)
     # Set the first (and only) time this alert is emailed — the dedup guard.
     email_sent_at = Column(DateTime(timezone=True), nullable=True)
     # Denormalized display text (populated for OBLIGATION alerts at creation so
@@ -127,3 +137,30 @@ class UserAlertPreference(Base):
     )
     category = Column(Enum(AlertCategory), nullable=False)
     email_enabled = Column(Boolean, nullable=False, default=True)
+
+
+class ObligationTrafficState(Base):
+    """Remembered traffic-light status per obligation, to detect *transitions*.
+
+    Obligations are read-only from Business Central with no local row, so there is
+    nowhere to hang "what colour was this yesterday?". This one-row-per-obligation
+    table remembers each instance's last derived status so
+    ``alerts.evaluate_traffic_transitions`` can tell green->yellow->red worsenings
+    from steady state and only email on a worsening. Idempotency of that task comes
+    entirely from ``last_status``: a same-day re-run finds it already advanced and
+    stages nothing.
+
+    ``last_status`` stores the derived-status *value* (the Spanish label such as
+    ``"Al día"``/``"Vencido"``, matching
+    :class:`~app.domains.obligations.schemas.DerivedObligationStatus`).
+    """
+
+    __tablename__ = "obligation_traffic_state"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # The opaque BC project-obligation instance id (one state row per instance).
+    bc_obligation_id = Column(String, nullable=False, unique=True, index=True)
+    last_status = Column(String, nullable=False)
+    last_evaluated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
