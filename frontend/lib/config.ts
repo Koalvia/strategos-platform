@@ -57,6 +57,9 @@ export const config = {
           markAllRead: "/api/v1/alerts/mark-all-read",
           byId: (id: string) => `/api/v1/alerts/${id}`,
         },
+        settings: {
+          trafficLight: "/api/v1/settings/traffic-light",
+        },
       },
       // Frontend API routes (proxy to backend)
       auth: {
@@ -104,6 +107,9 @@ export const config = {
         base: "/api/alerts",
         unreadCount: "/api/alerts/unread-count",
         markAllRead: "/api/alerts/mark-all-read",
+      },
+      settings: {
+        trafficLight: "/api/settings/traffic-light",
       },
     },
   },
