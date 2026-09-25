@@ -143,7 +143,14 @@ export interface ProjectPage {
 // Derived due state for an obligation instance (values mirror the UI badges).
 // "Sin fecha" covers instances with no due_date (e.g. live BC links that don't
 // carry date fields yet) — see backend DerivedObligationStatus.undated.
-export type ObligationStatus = "Vencido" | "Próximo" | "Al día" | "Sin fecha"
+// "Urgente" shares the red traffic-light colour with "Vencido" but keeps its
+// own label — see features/obligations/status-style.ts.
+export type ObligationStatus =
+  | "Vencido"
+  | "Urgente"
+  | "Próximo"
+  | "Al día"
+  | "Sin fecha"
 
 interface ObligationEntityRef {
   id: string
