@@ -80,6 +80,13 @@ def frozen_client(client):
     app.dependency_overrides.pop(get_reference_date, None)
 
 
+# The thresholds used by the pure unit tests below. They match the settings-store
+# seed defaults (red 5 / yellow 15), so with FROZEN_TODAY = 2026-07-01 the red
+# window ends 2026-07-06 (inclusive) and the yellow one 2026-07-16 (inclusive).
+RED_WITHIN_DAYS = 5
+YELLOW_WITHIN_DAYS = 15
+
+
 # --------------------------------------------------------------------------- #
 # derive_status (pure unit tests)
 # --------------------------------------------------------------------------- #
@@ -88,25 +95,58 @@ def frozen_client(client):
 @pytest.mark.unit
 def test_derive_status_overdue_when_past_due_and_unfiled():
     """A past-due, unfiled instance is Vencido."""
-    status = derive_status(date(2026, 6, 15), None, FROZEN_TODAY)
+    status = derive_status(
+        date(2026, 6, 15), None, FROZEN_TODAY, RED_WITHIN_DAYS, YELLOW_WITHIN_DAYS
+    )
     assert status is DerivedObligationStatus.overdue
 
 
 @pytest.mark.unit
-def test_derive_status_upcoming_within_window():
-    """An unfiled instance due within 7 days (inclusive) is Próximo."""
-    assert derive_status(FROZEN_TODAY, None, FROZEN_TODAY) is DerivedObligationStatus.upcoming
+def test_derive_status_urgent_within_red_window():
+    """An unfiled instance due within the red window (inclusive) is Urgente."""
+    # The reference date itself counts.
     assert (
-        derive_status(date(2026, 7, 8), None, FROZEN_TODAY)
+        derive_status(
+            FROZEN_TODAY, None, FROZEN_TODAY, RED_WITHIN_DAYS, YELLOW_WITHIN_DAYS
+        )
+        is DerivedObligationStatus.urgent
+    )
+    # Exactly on the red boundary: reference_date + red_within_days.
+    assert (
+        derive_status(
+            date(2026, 7, 6), None, FROZEN_TODAY, RED_WITHIN_DAYS, YELLOW_WITHIN_DAYS
+        )
+        is DerivedObligationStatus.urgent
+    )
+
+
+@pytest.mark.unit
+def test_derive_status_upcoming_between_red_and_yellow():
+    """Due beyond the red window but within the yellow one (inclusive) is Próximo."""
+    # One day past the red boundary.
+    assert (
+        derive_status(
+            date(2026, 7, 7), None, FROZEN_TODAY, RED_WITHIN_DAYS, YELLOW_WITHIN_DAYS
+        )
+        is DerivedObligationStatus.upcoming
+    )
+    # Exactly on the yellow boundary: reference_date + yellow_within_days.
+    assert (
+        derive_status(
+            date(2026, 7, 16), None, FROZEN_TODAY, RED_WITHIN_DAYS, YELLOW_WITHIN_DAYS
+        )
         is DerivedObligationStatus.upcoming
     )
 
 
 @pytest.mark.unit
-def test_derive_status_on_track_when_far_future():
-    """An unfiled instance due beyond the window is Al día."""
+def test_derive_status_on_track_when_beyond_yellow_window():
+    """An unfiled instance due beyond the yellow window is Al día."""
+    # One day past the yellow boundary.
     assert (
-        derive_status(date(2026, 7, 9), None, FROZEN_TODAY)
+        derive_status(
+            date(2026, 7, 17), None, FROZEN_TODAY, RED_WITHIN_DAYS, YELLOW_WITHIN_DAYS
+        )
         is DerivedObligationStatus.on_track
     )
 
@@ -114,17 +154,28 @@ def test_derive_status_on_track_when_far_future():
 @pytest.mark.unit
 def test_derive_status_filed_is_on_track_even_if_past_due():
     """A filed instance is Al día regardless of how far past due it was."""
-    status = derive_status(date(2026, 6, 15), date(2026, 6, 10), FROZEN_TODAY)
+    status = derive_status(
+        date(2026, 6, 15),
+        date(2026, 6, 10),
+        FROZEN_TODAY,
+        RED_WITHIN_DAYS,
+        YELLOW_WITHIN_DAYS,
+    )
     assert status is DerivedObligationStatus.on_track
 
 
 @pytest.mark.unit
 def test_derive_status_undated_when_no_due_date():
-    """An instance without a due date is Sin fecha, never overdue/upcoming."""
-    assert derive_status(None, None, FROZEN_TODAY) is DerivedObligationStatus.undated
+    """An instance without a due date is Sin fecha, never overdue/urgent/upcoming."""
+    assert (
+        derive_status(None, None, FROZEN_TODAY, RED_WITHIN_DAYS, YELLOW_WITHIN_DAYS)
+        is DerivedObligationStatus.undated
+    )
     # A due-less instance is undated even if a submission date is somehow present.
     assert (
-        derive_status(None, date(2026, 6, 10), FROZEN_TODAY)
+        derive_status(
+            None, date(2026, 6, 10), FROZEN_TODAY, RED_WITHIN_DAYS, YELLOW_WITHIN_DAYS
+        )
         is DerivedObligationStatus.undated
     )
 
@@ -188,7 +239,12 @@ def test_instance_mapping_includes_obligation_project_client_names(frozen_client
 
 @pytest.mark.integration
 def test_derived_status_across_endpoint(frozen_client):
-    """The endpoint derives Vencido / Próximo / Al día for the frozen date."""
+    """The endpoint derives Vencido / Urgente / Próximo / Al día for the frozen date.
+
+    Thresholds come from the settings store (seeded red 5 / yellow 15), so with a
+    frozen "today" of 2026-07-01 the red window ends 2026-07-06 and the yellow one
+    2026-07-16.
+    """
     resp = frozen_client.get(OBLIGATIONS_URL)
     assert resp.status_code == 200
     status_by_id = {o["id"]: o["status"] for o in _items(resp)}
@@ -196,8 +252,10 @@ def test_derived_status_across_endpoint(frozen_client):
     assert status_by_id["pobl-001"] == "Al día"
     # Unfiled and past due.
     assert status_by_id["pobl-002"] == "Vencido"
-    # Unfiled, due 2026-07-05 -> within the 7-day window of 2026-07-01.
-    assert status_by_id["pobl-006"] == "Próximo"
+    # Unfiled, due 2026-07-05 -> inside the red window.
+    assert status_by_id["pobl-006"] == "Urgente"
+    # Unfiled, due 2026-07-10 -> beyond red, inside the yellow window.
+    assert status_by_id["pobl-007"] == "Próximo"
     # Unfiled, due 2026-10-31 -> far future.
     assert status_by_id["pobl-012"] == "Al día"
 
@@ -220,6 +278,50 @@ def test_status_filter(frozen_client):
     assert {o["status"] for o in body} == {"Vencido"}
     # pobl-002..005 are overdue; pobl-001 is filed so it drops out.
     assert {o["id"] for o in body} == {"pobl-002", "pobl-003", "pobl-004", "pobl-005"}
+
+
+@pytest.mark.integration
+def test_urgent_status_filter(frozen_client):
+    """?status=Urgente keeps only instances inside the red window."""
+    resp = frozen_client.get(OBLIGATIONS_URL, params={"status": "Urgente"})
+    assert resp.status_code == 200
+    body = _items(resp)
+    assert {o["status"] for o in body} == {"Urgente"}
+    # Due 2026-07-05, inside the red window (ends 2026-07-06) of 2026-07-01.
+    assert {o["id"] for o in body} == {"pobl-006", "pobl-008", "pobl-011"}
+
+
+@pytest.mark.integration
+def test_upcoming_status_filter(frozen_client):
+    """?status=Próximo keeps only instances between the red and yellow windows."""
+    resp = frozen_client.get(OBLIGATIONS_URL, params={"status": "Próximo"})
+    assert resp.status_code == 200
+    body = _items(resp)
+    assert {o["status"] for o in body} == {"Próximo"}
+    # Due after 2026-07-06 (red) and on or before 2026-07-16 (yellow).
+    assert {o["id"] for o in body} == {"pobl-007", "pobl-009", "pobl-010"}
+
+
+@pytest.mark.integration
+def test_thresholds_are_read_from_the_settings_store(frozen_client, db_session):
+    """Changing the stored thresholds changes the derived statuses."""
+    from app.domains.settings.schemas import TrafficLightSettingsUpdate
+    from app.domains.settings.service import SettingsService
+
+    # pobl-007 is due 2026-07-10. With the seed windows (red 5 -> 2026-07-06,
+    # yellow 15 -> 2026-07-16) it lands beyond red but inside yellow -> Próximo.
+    before = {o["id"]: o["status"] for o in _items(frozen_client.get(OBLIGATIONS_URL))}
+    assert before["pobl-007"] == "Próximo"
+
+    # Widen the red window to 15 days (-> 2026-07-16), which now swallows pobl-007.
+    SettingsService(db_session).update_traffic_light(
+        TrafficLightSettingsUpdate(
+            red_within_days=15, yellow_within_days=30, email_on_change_enabled=True
+        )
+    )
+
+    after = {o["id"]: o["status"] for o in _items(frozen_client.get(OBLIGATIONS_URL))}
+    assert after["pobl-007"] == "Urgente"
 
 
 @pytest.mark.integration
@@ -288,8 +390,8 @@ def test_generated_instances_derive_on_track(frozen_client):
     )
     assert generated <= {o["id"] for o in on_track}
 
-    # None of them fall in the overdue or upcoming buckets.
-    for status in ("Vencido", "Próximo"):
+    # None of them fall in the overdue, urgent or upcoming buckets.
+    for status in ("Vencido", "Urgente", "Próximo"):
         got = _items(frozen_client.get(OBLIGATIONS_URL, params={"status": status}))
         assert generated.isdisjoint({o["id"] for o in got})
 

@@ -24,10 +24,7 @@ from app.domains.obligations.schemas import (
     DerivedObligationStatus,
     ProjectObligationResponse,
 )
-from app.domains.obligations.service import (
-    DEFAULT_UPCOMING_WINDOW_DAYS,
-    ObligationsService,
-)
+from app.domains.obligations.service import ObligationsService
 from app.domains.tasks.service import TasksService
 from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import (
@@ -102,39 +99,40 @@ class DashboardService:
     def get_upcoming_obligations_kpi(
         self,
         reference_date: date,
-        upcoming_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
     ) -> CountKpi | None:
-        """Return how many obligations fall due inside the upcoming window.
+        """Return how many obligations fall due inside the upcoming windows.
 
         Overdue instances are deliberately excluded: the tile reads "en los
-        próximos N días", so it counts only what is still ahead.
+        próximos N días", so it counts only what is still ahead — both the urgent
+        (red) and the upcoming (yellow) bands. The windows come from the
+        traffic-light settings store.
         """
         obligations = self._section(
             SECTION_OBLIGATIONS,
             lambda: self.obligations.list_project_obligations(
                 reference_date=reference_date,
-                upcoming_within_days=upcoming_within_days,
             ),
         )
         if obligations is None:
             return None
         return CountKpi(
             count=sum(
-                1 for o in obligations if o.status is DerivedObligationStatus.upcoming
+                1
+                for o in obligations
+                if o.status
+                in (DerivedObligationStatus.urgent, DerivedObligationStatus.upcoming)
             )
         )
 
     def get_upcoming_obligations_list(
         self,
         reference_date: date,
-        upcoming_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
     ) -> list[ProjectObligationResponse] | None:
-        """Return upcoming and overdue obligation instances ordered by due date."""
+        """Return overdue, urgent and upcoming instances ordered by due date."""
         obligations = self._section(
             SECTION_OBLIGATIONS,
             lambda: self.obligations.list_project_obligations(
                 reference_date=reference_date,
-                upcoming_within_days=upcoming_within_days,
             ),
         )
         if obligations is None:
@@ -143,7 +141,11 @@ class DashboardService:
             o
             for o in obligations
             if o.status
-            in (DerivedObligationStatus.overdue, DerivedObligationStatus.upcoming)
+            in (
+                DerivedObligationStatus.overdue,
+                DerivedObligationStatus.urgent,
+                DerivedObligationStatus.upcoming,
+            )
         ]
 
     def get_billing(

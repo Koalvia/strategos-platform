@@ -25,6 +25,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.pagination import build_paginated_response
+from app.domains.settings.service import SettingsService
 from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import (
     BCObligation,
@@ -49,14 +50,24 @@ def derive_status(
     due_date: date | None,
     submission_date: date | None,
     reference_date: date,
-    upcoming_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
+    red_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
+    yellow_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
 ) -> DerivedObligationStatus:
     """Derive an obligation's due state relative to ``reference_date``.
-    * An unfiled instance whose ``due_date`` is before the reference date is
-      ``Vencido`` (overdue).
-    * An unfiled instance due within ``upcoming_within_days`` (inclusive) of the
-      reference date is ``Próximo`` (upcoming); the reference date itself counts.
-    * Anything else (due further in the future) is ``Al día``.
+
+    The traffic light has three colours, decided in this precedence (both windows
+    are inclusive and counted from ``reference_date``):
+
+    1. ``due_date is None`` -> ``Sin fecha`` (undated).
+    2. a filed instance (``submission_date`` set) -> ``Al día`` (on track),
+       whatever its due date.
+    3. an unfiled instance whose ``due_date`` is before the reference date ->
+       ``Vencido`` (overdue).
+    4. due within ``red_within_days`` -> ``Urgente`` (urgent); the reference date
+       itself counts.
+    5. due within ``yellow_within_days`` but beyond the red window -> ``Próximo``
+       (upcoming).
+    6. anything further in the future -> ``Al día`` (on track).
     """
     if due_date is None:
         return DerivedObligationStatus.undated
@@ -64,7 +75,9 @@ def derive_status(
         return DerivedObligationStatus.on_track
     if due_date < reference_date:
         return DerivedObligationStatus.overdue
-    if due_date <= reference_date + timedelta(days=upcoming_within_days):
+    if due_date <= reference_date + timedelta(days=red_within_days):
+        return DerivedObligationStatus.urgent
+    if due_date <= reference_date + timedelta(days=yellow_within_days):
         return DerivedObligationStatus.upcoming
     return DerivedObligationStatus.on_track
 
@@ -75,6 +88,18 @@ class ObligationsService:
     def __init__(self, db: Session, bc_client: BusinessCentralClient):
         self.db = db
         self.bc_client = bc_client
+
+    def _traffic_light_thresholds(self) -> tuple[int, int]:
+        """Return ``(red_within_days, yellow_within_days)`` from the settings store.
+
+        Falls back to ``DEFAULT_UPCOMING_WINDOW_DAYS`` for both windows when the
+        store cannot be read (no DB session, or the singleton row is somehow
+        absent), so derivation never hard-depends on the store being reachable.
+        """
+        if self.db is None:
+            return DEFAULT_UPCOMING_WINDOW_DAYS, DEFAULT_UPCOMING_WINDOW_DAYS
+        settings = SettingsService(self.db).get_traffic_light()
+        return settings.red_within_days, settings.yellow_within_days
 
     def list_catalog(self) -> list[ObligationTypeResponse]:
         """Return the obligation catalog (type, periodicity and due-date rule)."""
@@ -95,7 +120,6 @@ class ObligationsService:
         project_id: str | None = None,
         due_after: date | None = None,
         due_before: date | None = None,
-        upcoming_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
     ) -> list[ProjectObligationResponse]:
         """Return per-project obligation instances, filtered and ordered by due date.
         Filters compose. Results are ordered by ``due_date`` ascending, with undated
@@ -132,6 +156,8 @@ class ObligationsService:
         projects_by_id = {p.id: p for p in self.bc_client.get_projects()}
         customer_names = self._customer_names_for(instances, projects_by_id)
 
+        red_within_days, yellow_within_days = self._traffic_light_thresholds()
+
         responses = [
             self._to_response(
                 instance,
@@ -139,7 +165,8 @@ class ObligationsService:
                 obligations_by_id,
                 projects_by_id,
                 customer_names,
-                upcoming_within_days,
+                red_within_days,
+                yellow_within_days,
             )
             for instance in instances
         ]
@@ -158,7 +185,6 @@ class ObligationsService:
         project_id: str | None = None,
         due_after: date | None = None,
         due_before: date | None = None,
-        upcoming_within_days: int = DEFAULT_UPCOMING_WINDOW_DAYS,
         page: int = 1,
         page_size: int | None = None,
     ) -> ProjectObligationPage:
@@ -195,7 +221,6 @@ class ObligationsService:
             project_id=project_id,
             due_after=due_after,
             due_before=due_before,
-            upcoming_within_days=upcoming_within_days,
         )
         # Counted before slicing: this is the number the client could never know
         # from a bare list — how many matches exist behind the current page.
@@ -279,7 +304,8 @@ class ObligationsService:
         obligations_by_id: dict[str, BCObligation],
         projects_by_id: dict[str, BCProject],
         customer_names: dict[str, str],
-        upcoming_within_days: int,
+        red_within_days: int,
+        yellow_within_days: int,
     ) -> ProjectObligationResponse:
         """Map a BC project-obligation DTO to the API response shape."""
         obligation = obligations_by_id.get(instance.obligation_id)
@@ -303,6 +329,7 @@ class ObligationsService:
                 instance.due_date,
                 instance.submission_date,
                 reference_date,
-                upcoming_within_days,
+                red_within_days,
+                yellow_within_days,
             ),
         )
