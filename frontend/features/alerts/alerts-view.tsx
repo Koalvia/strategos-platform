@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { alertsApi, type Alert, type AlertStatus } from "@/features/alerts/api"
+import { TrafficLightSettingsPanel } from "@/features/alerts/traffic-light-settings"
 
 // Spanish label for each alert source, shown as a small badge on every row.
 const ALERT_TYPE_LABEL: Record<Alert["alert_type"], string> = {
@@ -221,6 +222,8 @@ export function AlertsView() {
           </TabsContent>
         ))}
       </Tabs>
+
+      <TrafficLightSettingsPanel />
     </div>
   )
 }
