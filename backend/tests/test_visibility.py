@@ -14,6 +14,7 @@ import pytest
 
 from app.core.visibility import resolve_customer_scope
 from app.domains.auth.models import User
+from app.integrations.business_central.client import BusinessCentralUnavailable
 from app.integrations.business_central.mock_client import MockBusinessCentralClient
 from app.integrations.business_central.models import BCCustomerResource, BCResource
 
@@ -126,13 +127,8 @@ def test_manager_on_any_card_wins():
 
 
 @pytest.mark.unit
-def test_bc_outage_restricts_the_scope_to_empty():
-    """``customersResources`` degrades to ``[]`` on failure, which hides everything.
-
-    Fail-closed, and deliberately so: the resolver cannot tell an outage from "no
-    assignments", so it restricts rather than opens. The live client logs the failure
-    because on screen the two are indistinguishable.
-    """
+def test_no_assignments_restricts_the_scope_to_empty():
+    """A resource with genuinely zero assignments resolves to an empty scope."""
 
     class _NoAssignmentsBC(MockBusinessCentralClient):
         def get_customer_resources(self):
@@ -141,3 +137,19 @@ def test_bc_outage_restricts_the_scope_to_empty():
     scope = resolve_customer_scope(_user("jordi@estrategos.ad"), _NoAssignmentsBC())
     assert scope.customer_ids == ()
     assert not scope.sees_everything
+
+
+@pytest.mark.unit
+def test_bc_outage_propagates_unavailable():
+    """A BC read failure surfaces as ``BusinessCentralUnavailable``, never as a scope.
+
+    Guessing a scope while blind to BC would either hide a manager's data or leak a
+    restricted user's; the caller turns this into a 503 instead.
+    """
+
+    class _OutageBC(MockBusinessCentralClient):
+        def get_resources(self):
+            raise BusinessCentralUnavailable("resources read failed")
+
+    with pytest.raises(BusinessCentralUnavailable):
+        resolve_customer_scope(_user("marc@estrategos.ad"), _OutageBC())

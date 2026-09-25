@@ -6,6 +6,7 @@ import { ExternalLink, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AlertPreferencesPanel } from "@/features/alerts/alert-preferences"
 import { alertsApi, type Alert, type AlertStatus } from "@/features/alerts/api"
 
 // Spanish label for each alert source, shown as a small badge on every row.
@@ -115,6 +116,10 @@ export function AlertsView() {
             Marcar todas como leídas
           </Button>
         )}
+      </div>
+
+      <div className="mt-6">
+        <AlertPreferencesPanel />
       </div>
 
       <Tabs

@@ -15,6 +15,7 @@ from app.core.dependencies import get_business_central_client
 from app.db.session import SessionLocal
 
 from .models import Alert, AlertStatus, AlertType
+from .notifications import dispatch_pending_alert_emails
 from .service import AlertsService
 from .utils import should_generate_obligation_alert
 
@@ -101,16 +102,15 @@ def generate_obligation_alerts(reference_date: date | None = None):
             )
             project_name = project.name if project is not None else instance.project_id
             client_name = customer_names.get(customer_id, "")
-            message = (
-                f"{project_name} · {client_name} · "
-                f"deadline {instance.fecha_notificacion.isoformat()}"
-            )
+            due = instance.due_date.isoformat() if instance.due_date else "sin fecha"
+            message = f"{project_name} · {client_name} · vence {due}"
 
             service.create_for_obligation(
                 bc_obligation_id=instance.id,
                 customer_id=customer_id,
                 title=title,
                 message=message,
+                obligation_code=instance.obligation_id,
             )
             # Guard against duplicates within this same run.
             existing_alert_ids.add(instance.id)
@@ -127,5 +127,19 @@ def generate_obligation_alerts(reference_date: date | None = None):
         db.rollback()
         logger.exception("Obligation alert generation failed")
         raise
+    finally:
+        db.close()
+
+
+@celery.task(name="alerts.dispatch_alert_emails")
+def dispatch_alert_emails():
+    """Email every not-yet-emailed, non-discarded alert (BOPA + obligations).
+
+    Decoupled from the generators so a mail failure never affects alert creation
+    or a scan; runs on its own schedule and is idempotent (``email_sent_at``).
+    """
+    db = SessionLocal()
+    try:
+        return dispatch_pending_alert_emails(db, get_business_central_client())
     finally:
         db.close()

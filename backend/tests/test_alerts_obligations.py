@@ -20,12 +20,25 @@ from app.domains.alerts.utils import should_generate_obligation_alert
 from app.integrations.business_central.mock_client import MockBusinessCentralClient
 from app.integrations.business_central.models import BCProjectObligation
 
-# A fixed "today" consistent with the fecha_notificacion values seeded in the
-# project_obligations fixture (past/near dates fire, 2026-10-15 stays in future).
+# A fixed "today" consistent with the dates seeded in the project_obligations
+# fixture. The trigger uses BC's fecha_notificacion when present, else derives the
+# notification date as due_date - lead (15 days for these non-document codes), so
+# instances with only a due_date now fire too.
 REFERENCE_DATE = date(2026, 7, 20)
 
-# Fixture instances that qualify on REFERENCE_DATE (subject, unfiled, due).
-EXPECTED_DUE_IDS = {"pobl-002", "pobl-004", "pobl-006"}
+# Fixture instances that qualify on REFERENCE_DATE (subject, unfiled, notification
+# date — explicit or derived — reached): those with a past/near fecha_notificacion
+# (002/004/006) plus those whose due_date - 15 has arrived (003/007/008/010/011).
+EXPECTED_DUE_IDS = {
+    "pobl-002",
+    "pobl-003",
+    "pobl-004",
+    "pobl-006",
+    "pobl-007",
+    "pobl-008",
+    "pobl-010",
+    "pobl-011",
+}
 
 
 # --- Pure logic -------------------------------------------------------------
@@ -51,7 +64,11 @@ def _obligation(**overrides) -> BCProjectObligation:
         ({}, True),  # subject, unfiled, notification in the past
         ({"fecha_notificacion": REFERENCE_DATE}, True),  # exactly today fires
         ({"fecha_notificacion": date(2026, 8, 1)}, False),  # future: not yet
-        ({"fecha_notificacion": None}, False),  # no notification date
+        ({"fecha_notificacion": None}, False),  # no notification date and no due date
+        # Derived path: no fecha_notificacion, but due_date - 15d has arrived.
+        ({"fecha_notificacion": None, "due_date": date(2026, 7, 30)}, True),
+        # Derived path: due_date - 15d still in the future.
+        ({"fecha_notificacion": None, "due_date": date(2026, 9, 1)}, False),
         ({"subject": False}, False),  # not liable
         ({"subject": None}, False),  # unknown liability
         ({"submission_date": date(2026, 7, 2)}, False),  # already filed

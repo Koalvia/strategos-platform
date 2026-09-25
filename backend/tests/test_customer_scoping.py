@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
+from app.integrations.business_central.client import BusinessCentralUnavailable
+from app.integrations.business_central.mock_client import MockBusinessCentralClient
 from app.main import app
 
 CUSTOMERS_URL = "/api/v1/customers"
@@ -299,3 +301,32 @@ def test_users_directory_follows_the_same_rule(client_as, db_session):
 
     assert len(manager_rows) == 6
     assert [row["email"] for row in scoped_rows] == [SCOPED_EMAIL]
+
+
+# --------------------------------------------------------------------------- #
+# Business Central outage (honest 503, not an opaque 500)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.integration
+def test_bc_outage_returns_503_not_500(client_as):
+    """When BC is unreachable the scoped screens answer 503, not a 500.
+
+    Covers the whole path: an unhandled outage used to 500 every scoped endpoint —
+    Usuarios included, though it only reads the local DB — via the scope dependency.
+    """
+    from app.core.dependencies import get_business_central_client
+
+    class _OutageBC(MockBusinessCentralClient):
+        def get_resources(self):
+            raise BusinessCentralUnavailable("resources read failed")
+
+    app.dependency_overrides[get_business_central_client] = lambda: _OutageBC()
+    try:
+        with client_as(MANAGER_EMAIL) as client:
+            for url in (CUSTOMERS_URL, PROJECTS_URL, "/api/v1/users"):
+                resp = client.get(url)
+                assert resp.status_code == 503, url
+                assert "Business Central" in resp.json()["detail"]
+    finally:
+        app.dependency_overrides.pop(get_business_central_client, None)

@@ -44,6 +44,7 @@ from app.integrations.business_central.client import (
     DEFAULT_CUSTOMERS_PAGE_SIZE,
     DEFAULT_PROJECTS_PAGE_SIZE,
     BusinessCentralClient,
+    BusinessCentralUnavailable,
 )
 from app.integrations.business_central.models import (
     BCCustomer,
@@ -101,9 +102,14 @@ def _clean_option(value: str | None) -> str:
 
 
 def _parse_date(value: str | None) -> date | None:
-    """Parse a BC ISO date string to :class:`date`, ``None`` if absent/blank."""
+    """Parse a BC ISO date string to :class:`date`, ``None`` if absent/blank.
+
+    BC serializes an empty date as the .NET sentinel ``"0001-01-01"``; it means
+    "no date", so it maps to ``None`` too (otherwise a blank submission/due date
+    would read as a real year-1 date).
+    """
     text = (value or "").strip()
-    if not text:
+    if not text or text.startswith("0001-01-01"):
         return None
     return date.fromisoformat(text)
 
@@ -686,15 +692,16 @@ class LiveBusinessCentralClient(BusinessCentralClient):
     def get_customer_resources(self) -> list[BCCustomerResource]:
         """Return the customer/resource assignments, from BC ``customersResources``.
 
-        Degraded to ``[]`` on failure so callers apply their own default.
+        Raises ``BusinessCentralUnavailable`` on failure, so an outage does not read
+        as "no assignments" and silently hide a user's own customers.
         """
         try:
             rows = self._get_all("customersResources")
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
             logger.warning(
                 "Business Central customersResources read failed", exc_info=True
             )
-            return []
+            raise BusinessCentralUnavailable("customersResources read failed") from exc
 
         return [
             BCCustomerResource(
@@ -933,7 +940,17 @@ class LiveBusinessCentralClient(BusinessCentralClient):
         ]
 
     def get_resources(self) -> list[BCResource]:
-        """Return resource cards from BC's ``resources`` entity."""
+        """Return resource cards from BC's ``resources`` entity.
+
+        Raises ``BusinessCentralUnavailable`` on failure: without it the scope
+        resolver can't tell manager from non-manager, so a 503 beats guessing.
+        """
+        try:
+            rows = self._get_all("resources")
+        except httpx.HTTPError as exc:
+            logger.warning("Business Central resources read failed", exc_info=True)
+            raise BusinessCentralUnavailable("resources read failed") from exc
+
         return [
             BCResource(
                 id=row["no"],
@@ -943,7 +960,7 @@ class LiveBusinessCentralClient(BusinessCentralClient):
                 unit_cost=_parse_float(row.get("unitCost")),
                 unit_price=_parse_float(row.get("unitPrice")),
             )
-            for row in self._get_all("resources")
+            for row in rows
         ]
 
     # -- Deferred entities ------------------------------------------------------

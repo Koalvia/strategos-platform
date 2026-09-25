@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     RESEND_FROM_EMAIL: str = "noreply@example.com"
     RESEND_API_KEY: str = "your-resend-key"
 
+    # Alert email delivery. TEST_MODE (default on) redirects every alert email to
+    # ALERT_EMAIL_TEST_RECIPIENT with the real recipient noted, so the rollout can
+    # be validated before writing to real employee mailboxes. Set to false to send
+    # for real. ENABLED is the master switch (off skips sending entirely).
+    ALERT_EMAIL_ENABLED: bool = True
+    ALERT_EMAIL_TEST_MODE: bool = True
+    ALERT_EMAIL_TEST_RECIPIENT: str = "brian.marin@koalvia.com"
+
     # Frontend URL for email links (verification, password reset, etc.)
     FRONTEND_URL: str = "http://localhost:3000"
 

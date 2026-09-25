@@ -55,6 +55,7 @@ export const config = {
           base: "/api/v1/alerts",
           unreadCount: "/api/v1/alerts/unread-count",
           markAllRead: "/api/v1/alerts/mark-all-read",
+          preferences: "/api/v1/alerts/preferences",
           byId: (id: string) => `/api/v1/alerts/${id}`,
         },
       },

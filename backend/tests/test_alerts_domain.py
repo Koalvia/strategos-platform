@@ -143,3 +143,30 @@ def test_create_for_match_is_idempotent(db_session, bopa_match):
     assert db_session.query(Alert).filter(
         Alert.bopa_match_id == bopa_match.id
     ).count() == 1
+
+
+def test_alert_preferences_default_all_enabled(client):
+    """A user with no stored rows gets every category enabled by default."""
+    body = client.get("/api/v1/alerts/preferences").json()
+
+    prefs = {p["category"]: p["email_enabled"] for p in body["items"]}
+    assert prefs == {
+        "BOPA": True,
+        "DOCUMENT_EXPIRY": True,
+        "IVA": True,
+        "OBLIGATION": True,
+    }
+
+
+def test_alert_preferences_toggle_persists(client):
+    """Disabling one category is reflected on the next read."""
+    updated = client.put(
+        "/api/v1/alerts/preferences",
+        json={"category": "IVA", "email_enabled": False},
+    ).json()
+
+    prefs = {p["category"]: p["email_enabled"] for p in updated["items"]}
+    assert prefs["IVA"] is False and prefs["BOPA"] is True
+
+    reread = client.get("/api/v1/alerts/preferences").json()
+    assert {p["category"]: p["email_enabled"] for p in reread["items"]}["IVA"] is False

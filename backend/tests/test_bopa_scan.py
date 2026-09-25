@@ -117,7 +117,7 @@ def test_scan_requires_authentication(db_session):
 
 @pytest.mark.unit
 def test_worker_ready_queues_full_pipeline_chain(monkeypatch):
-    """On worker start, a chain of the three immutable signatures is queued."""
+    """On worker start, a chain of the four immutable signatures is queued."""
     built = []
 
     class FakeChain:
@@ -140,6 +140,7 @@ def test_worker_ready_queues_full_pipeline_chain(monkeypatch):
         "bopa.sync_daily",
         "bopa.analyze_matches",
         "alerts.generate_obligation_alerts",
+        "alerts.dispatch_alert_emails",
     ]
     # Immutable signatures so no result is passed from one step to the next.
     assert all(sig.immutable for sig in built[0].signatures)

@@ -32,6 +32,16 @@ from app.integrations.business_central.models import (
     ProjectStatus,
 )
 
+
+class BusinessCentralUnavailable(RuntimeError):
+    """Business Central could not be reached or answered an error.
+
+    Raised instead of leaking the transport error, so a BC outage surfaces as an
+    honest 503 (via the handler in ``app.main``) rather than a 500 or a silent empty
+    result that looks like "you have no data".
+    """
+
+
 # Shared defaults for the paginated listings; also used as the routers' default
 # query params so the API and the client implementations agree on them.
 DEFAULT_CUSTOMERS_PAGE_SIZE = 25

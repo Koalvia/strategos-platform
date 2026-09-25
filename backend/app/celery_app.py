@@ -62,6 +62,13 @@ celery.conf.beat_schedule = {
         # auto-dismisses ones already filed in the ERP.
         "schedule": crontab(hour=8, minute=0),
     },
+    "alerts-dispatch-emails-daily": {
+        "task": "alerts.dispatch_alert_emails",
+        # 08:10 UTC — after both generators (generation at 08:00 finishes well before);
+        # emails any not-yet-sent, non-discarded alerts (idempotent via email_sent_at).
+        # Decoupled so a mail failure never affects alert creation.
+        "schedule": crontab(hour=8, minute=10),
+    },
 }
 
 
@@ -119,5 +126,8 @@ def run_bopa_pipeline_on_startup(sender=None, **kwargs):
         celery.signature("bopa.sync_daily", immutable=True),
         celery.signature("bopa.analyze_matches", immutable=True),
         celery.signature("alerts.generate_obligation_alerts", immutable=True),
+        celery.signature("alerts.dispatch_alert_emails", immutable=True),
     ).apply_async()
-    logger.info("Worker ready: queued BOPA pipeline (sync -> analyze -> alerts).")
+    logger.info(
+        "Worker ready: queued BOPA pipeline (sync -> analyze -> alerts -> emails)."
+    )
