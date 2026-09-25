@@ -3,6 +3,7 @@ import os
 import sentry_sdk
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -12,6 +13,7 @@ from app.core.config import settings
 from app.core.middleware.api_key import APIKeyMiddleware
 from app.db.session import SessionLocal
 from app.domains.api_clients.api_key_loader import load_active_hashed_keys
+from app.integrations.business_central.client import BusinessCentralUnavailable
 
 
 # Middleware to prevent caching of API responses
@@ -33,6 +35,18 @@ app = FastAPI(
 )
 
 logger.info("Initializing Strategos FastAPI application...")
+
+
+@app.exception_handler(BusinessCentralUnavailable)
+async def business_central_unavailable_handler(
+    request: Request, exc: BusinessCentralUnavailable
+) -> JSONResponse:
+    """Turn a Business Central outage into an honest 503, not an opaque 500."""
+    logger.warning("Business Central unavailable on %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Business Central no disponible. Inténtalo de nuevo más tarde."},
+    )
 
 # Add no-cache middleware first (executes last in response chain)
 app.add_middleware(NoCacheMiddleware)

@@ -38,6 +38,19 @@ export interface GetAlertsParams {
   offset?: number
 }
 
+// Email-notification category, one per user preference toggle. Mirrors the
+// backend `AlertCategory` enum values.
+export type AlertCategory = "BOPA" | "DOCUMENT_EXPIRY" | "IVA" | "OBLIGATION"
+
+export interface AlertPreference {
+  category: AlertCategory
+  email_enabled: boolean
+}
+
+export interface AlertPreferences {
+  items: AlertPreference[]
+}
+
 export const alertsApi = {
   async getAlerts(
     params: GetAlertsParams = {},
@@ -79,6 +92,27 @@ export const alertsApi = {
     message?: string
   }> {
     const response = await fetch("/api/alerts/mark-all-read", { method: "POST" })
+    return response.json()
+  },
+
+  async getPreferences(): Promise<{
+    success: boolean
+    data?: AlertPreferences
+    message?: string
+  }> {
+    const response = await fetch("/api/alerts/preferences")
+    return response.json()
+  },
+
+  async updatePreference(
+    category: AlertCategory,
+    emailEnabled: boolean,
+  ): Promise<{ success: boolean; data?: AlertPreferences; message?: string }> {
+    const response = await fetch("/api/alerts/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category, email_enabled: emailEnabled }),
+    })
     return response.json()
   },
 }

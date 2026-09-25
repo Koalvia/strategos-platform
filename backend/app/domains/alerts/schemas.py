@@ -15,7 +15,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from .models import AlertStatus, AlertType
+from .models import AlertCategory, AlertStatus, AlertType
 
 
 class AlertResponse(BaseModel):
@@ -55,3 +55,23 @@ class UnreadCountResponse(BaseModel):
     """The number of unread (``NEW``) alerts, for the sidebar badge."""
 
     count: int
+
+
+class AlertPreference(BaseModel):
+    """One category's email opt-in for the current user."""
+
+    category: AlertCategory
+    email_enabled: bool
+
+
+class AlertPreferencesResponse(BaseModel):
+    """The current user's email preferences, one entry per category."""
+
+    items: list[AlertPreference]
+
+
+class AlertPreferenceUpdate(BaseModel):
+    """Request body to toggle one category's alert emails."""
+
+    category: AlertCategory
+    email_enabled: bool

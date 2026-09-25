@@ -16,7 +16,7 @@ confirmed BC payloads (no real Strategos client data / PII). They cover:
 * that the still-deferred ``userTasks`` entity returns ``[]`` with a warning
   logged, instead of raising;
 * the ``resources``/``customersResources`` mapping behind the visibility scope,
-  including its degradation to ``[]`` on a failed read.
+  including raising ``BusinessCentralUnavailable`` on a failed read.
 """
 
 import logging
@@ -27,9 +27,11 @@ import pytest
 
 from app.domains.obligations.schemas import DerivedObligationStatus
 from app.domains.obligations.service import derive_status
+from app.integrations.business_central.client import BusinessCentralUnavailable
 from app.integrations.business_central.live_client import (
     LiveBusinessCentralClient,
     _encode_offset,
+    _parse_date,
 )
 from app.integrations.business_central.models import (
     BCCustomer,
@@ -214,6 +216,22 @@ def test_pagination_follows_next_link():
     assert calls["customers"] == 3
     assert [c.id for c in customers] == ["C00", "C01", "C02", "C03", "C04", "C05"]
     assert all(isinstance(c, BCCustomer) for c in customers)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-07-31", date(2026, 7, 31)),
+        ("0001-01-01", None),  # .NET min-date sentinel = "no date"
+        ("0001-01-01T00:00:00Z", None),  # sentinel with a time part
+        ("", None),
+        (None, None),
+    ],
+)
+def test_parse_date_treats_dotnet_sentinel_as_none(value, expected):
+    """An empty BC date (``0001-01-01``) must parse to ``None``, not a year-1 date."""
+    assert _parse_date(value) == expected
 
 
 def _build_customers_page(
@@ -1175,18 +1193,29 @@ def test_customer_resources_mapping_ignores_odata_metadata():
 
 
 @pytest.mark.unit
-def test_customer_resources_read_failure_degrades_to_empty(caplog):
-    """A failing read logs and returns ``[]`` instead of raising.
-
-    The caller then applies its own default rather than the whole screen 500-ing.
-    """
+def test_customer_resources_read_failure_raises_unavailable(caplog):
+    """A failing read logs and raises, so an outage never reads as "no assignments"."""
     # No ``customersResources`` rows configured, so the mock transport answers 404.
     client, _ = _build_billing()
 
     with caplog.at_level(logging.WARNING):
-        assert client.get_customer_resources() == []
+        with pytest.raises(BusinessCentralUnavailable):
+            client.get_customer_resources()
 
     assert "customersResources" in caplog.text
+
+
+@pytest.mark.unit
+def test_resources_read_failure_raises_unavailable(caplog):
+    """``resources`` failing raises too: manager status is undecidable without it."""
+    # ``_build_billing`` configures no ``resources`` rows, so BC answers 404.
+    client, _ = _build_billing()
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(BusinessCentralUnavailable):
+            client.get_resources()
+
+    assert "resources" in caplog.text
 
 
 def _clause_count(request, field: str) -> int:

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.domains.bopa.models import BopaMatch
 
-from .models import Alert, AlertStatus, AlertType
+from .models import Alert, AlertCategory, AlertStatus, AlertType, UserAlertPreference
 from .schemas import AlertPage, AlertResponse
 
 
@@ -118,6 +118,7 @@ class AlertsService:
         customer_id: str,
         title: str,
         message: str,
+        obligation_code: str | None = None,
     ) -> Alert:
         """Build and stage an OBLIGATION alert (the caller commits).
 
@@ -125,18 +126,55 @@ class AlertsService:
         duplicates with an in-memory set built from a single bulk read, and the
         ``uq_alert_bc_obligation`` unique constraint is the strict DB-level
         backstop. ``user_id`` is left NULL — the alert is for all users.
+        ``obligation_code`` lets the email layer pick a template/category.
         """
         alert = Alert(
             user_id=None,
             customer_id=customer_id,
             alert_type=AlertType.OBLIGATION,
             bc_obligation_id=bc_obligation_id,
+            obligation_code=obligation_code,
             title=title,
             message=message,
             status=AlertStatus.NEW,
         )
         self.db.add(alert)
         return alert
+
+    def get_preferences(self, user_id: int) -> dict[AlertCategory, bool]:
+        """Return the user's email preference per category (default enabled).
+
+        Every category is present: a missing row means the default (True), so the
+        API always returns the full set the frontend can render as toggles.
+        """
+        stored = {
+            p.category: p.email_enabled
+            for p in self.db.query(UserAlertPreference).filter(
+                UserAlertPreference.user_id == user_id
+            )
+        }
+        return {c: stored.get(c, True) for c in AlertCategory}
+
+    def set_preference(
+        self, user_id: int, category: AlertCategory, email_enabled: bool
+    ) -> None:
+        """Upsert one (user, category) email preference."""
+        pref = (
+            self.db.query(UserAlertPreference)
+            .filter(
+                UserAlertPreference.user_id == user_id,
+                UserAlertPreference.category == category,
+            )
+            .first()
+        )
+        if pref is None:
+            pref = UserAlertPreference(
+                user_id=user_id, category=category, email_enabled=email_enabled
+            )
+            self.db.add(pref)
+        else:
+            pref.email_enabled = email_enabled
+        self.db.commit()
 
     @staticmethod
     def _to_response(alert: Alert) -> AlertResponse:

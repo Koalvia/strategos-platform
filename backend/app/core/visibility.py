@@ -27,6 +27,10 @@ class CustomerScope:
     def sees_everything(self) -> bool:
         return self.customer_ids is None
 
+    def sees(self, customer_id: str) -> bool:
+        """Whether this caller may see ``customer_id`` (a manager sees every one)."""
+        return self.customer_ids is None or customer_id in self.customer_ids
+
 
 def resolve_customer_scope(
     user: User, bc_client: BusinessCentralClient

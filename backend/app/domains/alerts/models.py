@@ -29,6 +29,7 @@ SQLite, so the two alert types never collide.
 import enum
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Enum,
@@ -55,6 +56,20 @@ class AlertType(enum.Enum):
     OBLIGATION = "OBLIGATION"
 
 
+class AlertCategory(enum.Enum):
+    """The email/notification category, finer than ``AlertType``.
+
+    OBLIGATION alerts split by their BC obligation code so each gets its own email
+    template and per-user preference: DNI/PASSAPORT are documents, IVA its own,
+    everything else the generic obligation.
+    """
+
+    BOPA = "BOPA"
+    DOCUMENT_EXPIRY = "DOCUMENT_EXPIRY"
+    IVA = "IVA"
+    OBLIGATION = "OBLIGATION"
+
+
 class Alert(Base):
     __tablename__ = "alerts"
     __table_args__ = (
@@ -78,6 +93,11 @@ class Alert(Base):
     )
     # OBLIGATION alerts carry the opaque BC obligation id; BOPA alerts leave NULL.
     bc_obligation_id = Column(String, nullable=True, index=True)
+    # The BC obligation code (DNI/PASSAPORT/IVA/...) for OBLIGATION alerts, so the
+    # email layer picks a template/category without re-reading BC. BOPA leaves NULL.
+    obligation_code = Column(String, nullable=True)
+    # Set the first (and only) time this alert is emailed — the dedup guard.
+    email_sent_at = Column(DateTime(timezone=True), nullable=True)
     # Denormalized display text (populated for OBLIGATION alerts at creation so
     # the read path stays DB-only; BOPA alerts resolve display via bopa_match).
     title = Column(String, nullable=True)
@@ -87,3 +107,23 @@ class Alert(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     bopa_match = relationship("BopaMatch")
+
+
+class UserAlertPreference(Base):
+    """Per-user opt-in/out of alert emails, by category.
+
+    A missing row means "use the default" (enabled): a user only ever has rows for
+    categories they have explicitly changed. One row per (user, category).
+    """
+
+    __tablename__ = "user_alert_preferences"
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", name="uq_user_alert_pref"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    category = Column(Enum(AlertCategory), nullable=False)
+    email_enabled = Column(Boolean, nullable=False, default=True)

@@ -14,10 +14,51 @@ from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
 
 from .models import AlertStatus
-from .schemas import AlertPage, AlertResponse, AlertUpdate, UnreadCountResponse
+from .schemas import (
+    AlertPage,
+    AlertPreference,
+    AlertPreferencesResponse,
+    AlertPreferenceUpdate,
+    AlertResponse,
+    AlertUpdate,
+    UnreadCountResponse,
+)
 from .service import AlertsService
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+
+@router.get("/preferences", response_model=AlertPreferencesResponse)
+def get_alert_preferences(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+):
+    """Return the current user's per-category alert-email preferences."""
+    prefs = AlertsService(db).get_preferences(current_user.id)
+    return AlertPreferencesResponse(
+        items=[
+            AlertPreference(category=c, email_enabled=enabled)
+            for c, enabled in prefs.items()
+        ]
+    )
+
+
+@router.put("/preferences", response_model=AlertPreferencesResponse)
+def update_alert_preferences(
+    data: AlertPreferenceUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+):
+    """Toggle alert emails for one category for the current user."""
+    service = AlertsService(db)
+    service.set_preference(current_user.id, data.category, data.email_enabled)
+    prefs = service.get_preferences(current_user.id)
+    return AlertPreferencesResponse(
+        items=[
+            AlertPreference(category=c, email_enabled=enabled)
+            for c, enabled in prefs.items()
+        ]
+    )
 
 
 @router.get("", response_model=AlertPage)
