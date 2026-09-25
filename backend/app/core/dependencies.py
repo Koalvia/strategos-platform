@@ -92,3 +92,20 @@ def get_customer_scope(
     (with its email), unlike ``require_verified_user``'s token payload.
     """
     return resolve_customer_scope(user, bc_client)
+
+
+def get_director_user(
+    user: User = Depends(get_verified_user),
+    scope: CustomerScope = Depends(get_customer_scope),
+) -> User:
+    """Require the caller to be a "director": a BC manager who sees every customer.
+
+    There is no ``role`` column; a director is defined exactly as elsewhere in the
+    app — a user whose resolved :class:`~app.core.visibility.CustomerScope` sees
+    everything (``manageAllCustomers``). Anyone else gets 403.
+    """
+    if not scope.sees_everything:
+        raise HTTPException(
+            status_code=403, detail="This action is restricted to directors"
+        )
+    return user
