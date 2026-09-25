@@ -28,12 +28,20 @@ class DerivedObligationStatus(str, Enum):
     Members are English for readability; values preserve the Spanish vocabulary
     shown in the UI (badge labels in ``dashboard.png``).
 
+    The traffic light has three colours: **red** covers ``overdue`` *and*
+    ``urgent`` (due within the red window), **yellow** is ``upcoming`` (due within
+    the yellow window but beyond red) and **green** is ``on_track``. The two
+    windows come from the traffic-light settings store (see
+    ``service.derive_status``).
+
     ``undated`` covers instances that carry no ``due_date`` (the live BC
     ``projectObligation`` link has no date fields yet); they cannot be placed on
-    the calendar and are excluded from the Vencido / Próximo / Al día counts.
+    the calendar and are excluded from the Vencido / Urgente / Próximo / Al día
+    counts.
     """
 
     overdue = "Vencido"
+    urgent = "Urgente"
     upcoming = "Próximo"
     on_track = "Al día"
     undated = "Sin fecha"
@@ -72,7 +80,7 @@ class ProjectObligationResponse(BaseModel):
 
     Mirrors the "Próximas obligaciones" widget in ``dashboard.png``: the
     obligation, the project · client it belongs to, a due date, and a status
-    badge (Vencido / Próximo / Al día / Sin fecha).
+    badge (Vencido / Urgente / Próximo / Al día / Sin fecha).
 
     ``due_date`` and ``subject`` are optional: the live BC ``projectObligation``
     link has no date/subject fields yet, so those instances come back with

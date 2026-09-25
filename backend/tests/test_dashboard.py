@@ -473,23 +473,27 @@ def test_tareas_pendientes_counts_unfinished_tasks(frozen_client):
 
 
 @pytest.mark.integration
-def test_obligaciones_proximas_counts_upcoming_within_window(frozen_client):
-    """upcoming-obligations-count == instances due within 7 days (Próximo), from #9.
+def test_obligaciones_proximas_counts_urgent_and_upcoming(frozen_client):
+    """upcoming-obligations-count == instances still ahead (Urgente + Próximo).
 
     Overdue instances are excluded on purpose — the tile reads "en los próximos
-    7 días" — even though the list endpoint below includes them.
+    N días" — even though the list endpoint below includes them. The two windows
+    come from the traffic-light settings store (seeded red 5 / yellow 15).
     """
     app.dependency_overrides[obligations_reference_date] = lambda: FROZEN_TODAY
     try:
         # The obligations endpoint answers with the {items, meta} envelope; the
         # dashboard's own routes still return bare lists.
+        urgent = frozen_client.get(
+            OBLIGATIONS_URL, params={"status": "Urgente"}
+        ).json()["items"]
         upcoming = frozen_client.get(
             OBLIGATIONS_URL, params={"status": "Próximo"}
         ).json()["items"]
     finally:
         app.dependency_overrides.pop(obligations_reference_date, None)
     kpi = frozen_client.get(UPCOMING_COUNT_URL).json()
-    assert kpi == {"count": len(upcoming)}
+    assert kpi == {"count": len(urgent) + len(upcoming)}
     assert kpi == {"count": 6}
 
 
@@ -500,11 +504,11 @@ def test_obligaciones_proximas_counts_upcoming_within_window(frozen_client):
 
 @pytest.mark.integration
 def test_proximas_obligaciones_are_upcoming_or_overdue_ordered(frozen_client):
-    """The list is the upcoming + overdue instances, ordered by due date."""
+    """The list is the overdue + urgent + upcoming instances, ordered by due date."""
     proximas = frozen_client.get(DASHBOARD_OBLIGATIONS_URL).json()
-    # Only Vencido / Próximo (never Al día).
-    assert {o["status"] for o in proximas} == {"Vencido", "Próximo"}
-    # pobl-002..005 (overdue) + pobl-006..011 (upcoming) = 10 instances.
+    # Only Vencido / Urgente / Próximo (never Al día).
+    assert {o["status"] for o in proximas} == {"Vencido", "Urgente", "Próximo"}
+    # pobl-002..005 (overdue) + pobl-006..011 (urgent/upcoming) = 10 instances.
     assert {o["id"] for o in proximas} == {
         "pobl-002",
         "pobl-003",
