@@ -62,6 +62,13 @@ celery.conf.beat_schedule = {
         # auto-dismisses ones already filed in the ERP.
         "schedule": crontab(hour=8, minute=0),
     },
+    "obligations-evaluate-traffic-transitions-daily": {
+        "task": "alerts.evaluate_traffic_transitions",
+        # 08:05 UTC — between obligation-alert generation (08:00) and email dispatch
+        # (08:10). Compares each obligation's derived traffic-light colour to the
+        # remembered one and stages a TRAFFIC_CHANGE alert on a worsening.
+        "schedule": crontab(hour=8, minute=5),
+    },
     "alerts-dispatch-emails-daily": {
         "task": "alerts.dispatch_alert_emails",
         # 08:10 UTC — after both generators (generation at 08:00 finishes well before);
@@ -126,8 +133,10 @@ def run_bopa_pipeline_on_startup(sender=None, **kwargs):
         celery.signature("bopa.sync_daily", immutable=True),
         celery.signature("bopa.analyze_matches", immutable=True),
         celery.signature("alerts.generate_obligation_alerts", immutable=True),
+        celery.signature("alerts.evaluate_traffic_transitions", immutable=True),
         celery.signature("alerts.dispatch_alert_emails", immutable=True),
     ).apply_async()
     logger.info(
-        "Worker ready: queued BOPA pipeline (sync -> analyze -> alerts -> emails)."
+        "Worker ready: queued BOPA pipeline "
+        "(sync -> analyze -> alerts -> traffic -> emails)."
     )
