@@ -28,6 +28,7 @@ import app.domains.alerts.models
 import app.domains.auth.models
 import app.domains.api_clients.models
 import app.domains.bopa.models
+import app.domains.settings.models
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.db.base import Base
