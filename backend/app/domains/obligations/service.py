@@ -25,6 +25,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.pagination import build_paginated_response
+from app.core.visibility import CustomerScope
 from app.domains.settings.service import SettingsService
 from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import (
@@ -120,10 +121,17 @@ class ObligationsService:
         project_id: str | None = None,
         due_after: date | None = None,
         due_before: date | None = None,
+        scope: CustomerScope | None = None,
     ) -> list[ProjectObligationResponse]:
         """Return per-project obligation instances, filtered and ordered by due date.
         Filters compose. Results are ordered by ``due_date`` ascending, with undated
         (``due_date is None``) instances sorted last.
+
+        ``scope`` restricts the result to the caller's visible clients: a manager
+        (``sees_everything``) or ``scope=None`` (in-process callers) sees every
+        instance; anyone else sees only instances whose project belongs to a client
+        in their scope (an instance whose project cannot be resolved is dropped, as
+        its client cannot be verified).
 
         **The order of the Business Central reads below is deliberate — do not
         reshuffle it.** The instance link table is read *first* because it is by
@@ -152,8 +160,20 @@ class ObligationsService:
         if not instances:
             return []
 
-        obligations_by_id = {o.id: o for o in self.bc_client.get_obligations()}
         projects_by_id = {p.id: p for p in self.bc_client.get_projects()}
+
+        # Client scoping: a restricted caller only sees instances whose project's
+        # customer is in their scope. Managers (sees_everything) and None skip it.
+        if scope is not None and not scope.sees_everything:
+            instances = [
+                i for i in instances
+                if (project := projects_by_id.get(i.project_id)) is not None
+                and scope.sees(project.customer_id)
+            ]
+            if not instances:
+                return []
+
+        obligations_by_id = {o.id: o for o in self.bc_client.get_obligations()}
         customer_names = self._customer_names_for(instances, projects_by_id)
 
         red_within_days, yellow_within_days = self._traffic_light_thresholds()
@@ -187,6 +207,7 @@ class ObligationsService:
         due_before: date | None = None,
         page: int = 1,
         page_size: int | None = None,
+        scope: CustomerScope | None = None,
     ) -> ProjectObligationPage:
         """Return one page of per-project instances inside the shared envelope.
 
@@ -221,6 +242,7 @@ class ObligationsService:
             project_id=project_id,
             due_after=due_after,
             due_before=due_before,
+            scope=scope,
         )
         # Counted before slicing: this is the number the client could never know
         # from a bare list — how many matches exist behind the current page.

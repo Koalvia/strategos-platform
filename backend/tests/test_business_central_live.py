@@ -784,14 +784,14 @@ def test_user_field_mapping_with_email_fallback():
             "userSecurityID": "11111111-1111-1111-1111-111111111111",
             "userName": "AGUSTINA",
             "fullName": "Contact Email User",
-            "contactEmail": "contact@estrategos.ad",
-            "authenticationEmail": "auth@estrategos.ad",
+            "contactEmail": "contact@strategos.ad",
+            "authenticationEmail": "auth@strategos.ad",
         },
         {
             "userSecurityID": "22222222-2222-2222-2222-222222222222",
             "fullName": "Fallback User",
             "contactEmail": "",
-            "authenticationEmail": "fallback@estrategos.ad",
+            "authenticationEmail": "fallback@strategos.ad",
         },
     ]
     client, _ = _build(users=users)
@@ -800,11 +800,11 @@ def test_user_field_mapping_with_email_fallback():
     assert all(isinstance(u, BCUser) for u in result)
     assert result[0].id == "11111111-1111-1111-1111-111111111111"
     assert result[0].name == "Contact Email User"
-    assert result[0].email == "contact@estrategos.ad"
+    assert result[0].email == "contact@strategos.ad"
     # userName is the code userSetups is keyed by; absent, it stays blank.
     assert result[0].user_name == "AGUSTINA"
     # Blank contactEmail falls back to authenticationEmail.
-    assert result[1].email == "fallback@estrategos.ad"
+    assert result[1].email == "fallback@strategos.ad"
     assert result[1].user_name == ""
 
 

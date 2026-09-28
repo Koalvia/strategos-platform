@@ -20,9 +20,9 @@ from app.domains.alerts.notifications import dispatch_pending_alert_emails
 from app.domains.auth.models import User
 from app.integrations.business_central.mock_client import MockBusinessCentralClient
 
-MANAGER = "marc@estrategos.ad"
-ASSIGNED = "jordi@estrategos.ad"  # cust-001, cust-002
-OTHER = "laura@estrategos.ad"  # cust-003
+MANAGER = "marc@strategos.ad"
+ASSIGNED = "jordi@strategos.ad"  # cust-001, cust-002
+OTHER = "laura@strategos.ad"  # cust-003
 STRANGER = "nobody@example.com"  # no BC resource
 
 

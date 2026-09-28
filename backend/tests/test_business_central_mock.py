@@ -149,7 +149,7 @@ def test_get_users_count_type_and_emails(client):
         "Núria Camps",
         "Pol Ribas",
     }
-    assert all(u.email.endswith("@estrategos.ad") for u in users)
+    assert all(u.email.endswith("@strategos.ad") for u in users)
 
 
 @pytest.mark.unit
@@ -157,7 +157,7 @@ def test_resources_carry_the_identity_fields(client):
     """Every resource has the email the login matches on, and the permission flag."""
     resources = client.get_resources()
     assert all(isinstance(r, BCResource) for r in resources)
-    assert all(r.email.endswith("@estrategos.ad") for r in resources)
+    assert all(r.email.endswith("@strategos.ad") for r in resources)
 
 
 @pytest.mark.unit

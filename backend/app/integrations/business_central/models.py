@@ -31,10 +31,16 @@ class ProjectStatus(str, Enum):
 
 
 class TaskStatus(str, Enum):
-    """Board column a user task sits in."""
+    """Board column a user task sits in.
+
+    ``waiting_client`` is platform-only: Business Central never emits it (it has no
+    such column), so it originates solely from a local status override. Members are
+    declared in board display order.
+    """
 
     pending = "Pendiente"
     in_progress = "En curso"
+    waiting_client = "Esperando información / respuesta del cliente"
     done = "Hecho"
 
 

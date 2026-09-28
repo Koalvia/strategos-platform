@@ -123,6 +123,10 @@ export function AlertsView() {
         <AlertPreferencesPanel />
       </div>
 
+      <div className="mt-6">
+        <TrafficLightSettingsPanel />
+      </div>
+
       <Tabs
         value={status}
         onValueChange={(value) => setStatus(value as AlertStatus)}
@@ -227,8 +231,6 @@ export function AlertsView() {
           </TabsContent>
         ))}
       </Tabs>
-
-      <TrafficLightSettingsPanel />
     </div>
   )
 }

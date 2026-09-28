@@ -11,7 +11,7 @@ export const STATUS_BADGE: Record<ObligationStatus, string> = {
   Urgente: "bg-red-100 text-red-700",
   Próximo: "bg-amber-100 text-amber-700",
   "Al día": "bg-green-100 text-green-700",
-  "Sin fecha": "bg-slate-100 text-slate-500",
+  "Sin fecha": "bg-orange-100 text-orange-700",
 }
 
 export const STATUS_DOT: Record<ObligationStatus, string> = {
@@ -19,5 +19,14 @@ export const STATUS_DOT: Record<ObligationStatus, string> = {
   Urgente: "bg-red-500",
   Próximo: "bg-amber-500",
   "Al día": "bg-green-500",
-  "Sin fecha": "bg-slate-400",
+  "Sin fecha": "bg-orange-500",
+}
+
+// Board card label per traffic-light status (the wording the firm uses).
+export const TRAFFIC_LIGHT_LABEL: Record<ObligationStatus, string> = {
+  Vencido: "Vencido",
+  Urgente: "Urgente",
+  Próximo: "Vencimiento próximo",
+  "Al día": "Tiempo suficiente",
+  "Sin fecha": "Sin fecha de vencimiento",
 }

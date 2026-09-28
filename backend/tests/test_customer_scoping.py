@@ -1,7 +1,7 @@
 """End-to-end tests for the customer/project scoping (the ticket's acceptance criteria).
 
-Two callers, driven by the mock fixtures: Marc (``marc@estrategos.ad``, RES-01, the
-manager) and Jordi (``jordi@estrategos.ad``, RES-02, assigned cust-001 and cust-002).
+Two callers, driven by the mock fixtures: Marc (``marc@strategos.ad``, RES-01, the
+manager) and Jordi (``jordi@strategos.ad``, RES-02, assigned cust-001 and cust-002).
 
 Fixture shape the assertions lean on: 15 customers, 19 projects, and cust-001/cust-002
 own 4 of them (2 each).
@@ -22,9 +22,9 @@ from app.main import app
 CUSTOMERS_URL = "/api/v1/customers"
 PROJECTS_URL = "/api/v1/projects"
 
-MANAGER_EMAIL = "marc@estrategos.ad"
-SCOPED_EMAIL = "jordi@estrategos.ad"
-UNASSIGNED_EMAIL = "anna@estrategos.ad"
+MANAGER_EMAIL = "marc@strategos.ad"
+SCOPED_EMAIL = "jordi@strategos.ad"
+UNASSIGNED_EMAIL = "anna@strategos.ad"
 
 SCOPED_CUSTOMERS = {"cust-001", "cust-002"}
 SCOPED_PROJECTS = {"proj-001", "proj-002", "proj-003", "proj-004"}

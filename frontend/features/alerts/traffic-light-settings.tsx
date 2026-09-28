@@ -33,8 +33,9 @@ export function TrafficLightSettingsPanel() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
-  // Set once a PUT is rejected with 403: the caller is not a director, so the
-  // panel becomes read-only (the backend is the authoritative gate).
+  // Only managers see this card; the backend reports it via `editable`.
+  const [editable, setEditable] = useState(false)
+  // Defensive fallback: a 403 on save turns the panel read-only.
   const [readOnly, setReadOnly] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -47,6 +48,7 @@ export function TrafficLightSettingsPanel() {
         const result = await settingsApi.getTrafficLight()
         if (!active) return
         if (result.success && result.data) {
+          setEditable(Boolean(result.data.editable))
           setForm(toFormState(result.data))
           setLoadError(false)
         } else {
@@ -130,11 +132,14 @@ export function TrafficLightSettingsPanel() {
 
   const disabled = readOnly || saving
 
+  // Hidden for non-managers (and while loading, to avoid a flash).
+  if (!editable) return null
+
   return (
-    <section className="mt-8 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
       <div>
         <h2 className="text-lg font-semibold text-slate-900">
-          Semáforo de obligaciones
+          Umbral de obligaciones
         </h2>
         <p className="mt-1 text-sm text-slate-500">
           Días de antelación con los que una obligación pasa a amarillo o rojo, y

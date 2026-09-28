@@ -6,7 +6,11 @@ from pydantic import BaseModel, ConfigDict
 
 
 class TrafficLightSettingsResponse(BaseModel):
-    """The obligations traffic-light thresholds as read from the store."""
+    """The obligations traffic-light thresholds as read from the store.
+
+    ``editable`` reflects whether the caller may change them (a manager whose scope
+    sees everything), so the UI can hide the editor for everyone else.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -14,6 +18,7 @@ class TrafficLightSettingsResponse(BaseModel):
     red_within_days: int
     email_on_change_enabled: bool
     updated_at: datetime | None
+    editable: bool = False
 
 
 class TrafficLightSettingsUpdate(BaseModel):

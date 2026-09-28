@@ -24,6 +24,7 @@ function formatDate(isoDate: string | null): string {
 // fully-red line read as if the due date itself were wrong.
 const OBLIGATION_COLOR: Record<ProjectObligation["status"], string> = {
   Vencido: "text-slate-700",
+  Urgente: "text-red-600",
   Próximo: "text-amber-600",
   "Al día": "text-slate-500",
   "Sin fecha": "text-slate-400",

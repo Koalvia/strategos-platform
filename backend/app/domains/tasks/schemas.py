@@ -13,9 +13,11 @@ by :class:`TaskNoteCreate` / :class:`TaskNoteResponse`.
 """
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domains.obligations.schemas import DerivedObligationStatus
 from app.integrations.business_central.models import TaskPriority, TaskStatus
 
 
@@ -34,20 +36,31 @@ class TaskAssignee(BaseModel):
 
 
 class TaskResponse(BaseModel):
-    """A task as shown on the Tareas board, sourced read-only from BC.
+    """A card on the Tareas board — a BC task or an obligation shown as a task.
 
-    Mirrors a card in ``tareas.png``: title, the project it belongs to, a
-    priority badge (Alta / Media / Baja), a due date, the assignee, and the board
-    column the card sits in (``status``: Pendiente / En curso / Hecho).
+    ``status`` is the platform-owned workflow column (Pendiente/En curso/Esperando/
+    Hecho). ``traffic_light`` is the colour derived from ``due_date`` (green/yellow/
+    red/orange). ``source`` says whether it is a BC user task or an obligation.
+    Obligations carry a ``client`` and have no ``assignee``/``priority``.
     """
 
     id: str
     title: str
     project: TaskProject
-    assignee: TaskAssignee
-    priority: TaskPriority
+    client: TaskProject | None = None
+    assignee: TaskAssignee | None = None
+    priority: TaskPriority | None = None
     status: TaskStatus
-    due_date: date
+    traffic_light: DerivedObligationStatus | None = None
+    due_date: date | None = None
+    source: Literal["task", "obligation"] = "task"
+
+
+class TaskStatusUpdate(BaseModel):
+    """Request body to move a task/obligation card to a new workflow state."""
+
+    status: TaskStatus
+    source: Literal["task", "obligation"] = "task"
 
 
 class TaskNoteCreate(BaseModel):

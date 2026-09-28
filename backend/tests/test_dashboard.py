@@ -465,7 +465,8 @@ def test_generated_data_reflected_in_kpis(frozen_client):
 @pytest.mark.integration
 def test_tareas_pendientes_counts_unfinished_tasks(frozen_client):
     """pending-tasks.pending == tasks not in Hecho; total == all tasks."""
-    tasks = frozen_client.get(TASKS_URL).json()
+    # The board also carries obligation cards now; the KPI counts BC tasks only.
+    tasks = [c for c in frozen_client.get(TASKS_URL).json() if c["source"] == "task"]
     not_done = [t for t in tasks if t["status"] != "Hecho"]
     kpi = frozen_client.get(PENDING_TASKS_URL).json()
     assert kpi == {"pending": len(not_done), "total": len(tasks)}
@@ -506,8 +507,10 @@ def test_obligaciones_proximas_counts_urgent_and_upcoming(frozen_client):
 def test_proximas_obligaciones_are_upcoming_or_overdue_ordered(frozen_client):
     """The list is the overdue + urgent + upcoming instances, ordered by due date."""
     proximas = frozen_client.get(DASHBOARD_OBLIGATIONS_URL).json()
-    # Only Vencido / Urgente / Próximo (never Al día).
-    assert {o["status"] for o in proximas} == {"Vencido", "Urgente", "Próximo"}
+    # Only Vencido / Urgente / Próximo (never Al día); the exact split between
+    # urgent and upcoming depends on the configurable thresholds.
+    assert {o["status"] for o in proximas} <= {"Vencido", "Urgente", "Próximo"}
+    assert "Al día" not in {o["status"] for o in proximas}
     # pobl-002..005 (overdue) + pobl-006..011 (urgent/upcoming) = 10 instances.
     assert {o["id"] for o in proximas} == {
         "pobl-002",

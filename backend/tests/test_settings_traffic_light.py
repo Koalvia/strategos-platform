@@ -38,13 +38,15 @@ def test_get_seeds_defaults(client, db_session):
     assert resp.status_code == 200
     body = resp.json()
     assert body["yellow_within_days"] == 15
-    assert body["red_within_days"] == 5
+    assert body["red_within_days"] == 7
     assert body["email_on_change_enabled"] is True
+    # The default test client's scope sees everything, so it may edit.
+    assert body["editable"] is True
 
     row = db_session.get(TrafficLightSettings, TRAFFIC_LIGHT_SETTINGS_ID)
     assert row is not None
     assert row.yellow_within_days == 15
-    assert row.red_within_days == 5
+    assert row.red_within_days == 7
 
 
 @pytest.mark.integration
@@ -91,7 +93,7 @@ def test_update_as_non_director_forbidden(client, db_session):
 
     row = db_session.get(TrafficLightSettings, TRAFFIC_LIGHT_SETTINGS_ID)
     assert row.yellow_within_days == 15
-    assert row.red_within_days == 5
+    assert row.red_within_days == 7
     assert row.email_on_change_enabled is True
 
 
