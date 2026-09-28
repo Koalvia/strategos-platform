@@ -223,11 +223,9 @@ class TasksService:
             row.updated_by = user.id
         self.db.commit()
 
-        obligation = self._obligation_response(instance_id)
-        technician = self._technician_assignee(
-            self._get_project(instance.project_id), self._users_by_key()
-        )
-        return self._obligation_card(obligation, new_status, technician)
+        # Build the card from the instance already in hand — no second obligations
+        # read (avoids re-fetching the whole obligations list just to shape one card).
+        return self._obligation_card_from_instance(instance, new_status)
 
     def add_note(self, task_id: str, author: User, body: str) -> TaskNoteResponse:
         """Add an internal note to a task (404 if the BC task is unknown)."""
@@ -302,15 +300,40 @@ class TasksService:
                 return project
         return None
 
-    def _obligation_response(self, instance_id: str) -> ProjectObligationResponse:
-        """Re-read one obligation (unscoped) to shape its card after a status change."""
-        obligations = ObligationsService(
-            self.db, self.bc_client
-        ).list_project_obligations(reference_date=date.today(), scope=None)
-        for obligation in obligations:
-            if obligation.id == instance_id:
-                return obligation
-        raise HTTPException(status_code=404, detail="Obligation not found")
+    def _obligation_card_from_instance(
+        self, instance: BCProjectObligation, workflow_status: TaskStatus
+    ) -> TaskResponse:
+        """Shape one obligation card from the in-hand instance (no obligations re-read)."""
+        ref = date.today()
+        red, yellow = self._thresholds()
+        project = self._get_project(instance.project_id)
+        customer_id = project.customer_id if project is not None else ""
+        customer_name = (
+            self.bc_client.get_customer_names([customer_id]).get(customer_id, "")
+            if customer_id
+            else ""
+        )
+        obligation = next(
+            (o for o in self.bc_client.get_obligations() if o.id == instance.obligation_id),
+            None,
+        )
+        title = obligation.name if obligation is not None and obligation.name else instance.obligation_id
+        return TaskResponse(
+            id=instance.id,
+            title=title,
+            project=TaskProject(
+                id=instance.project_id, name=project.name if project is not None else ""
+            ),
+            client=TaskProject(id=customer_id, name=customer_name),
+            assignee=self._technician_assignee(project, self._users_by_key()),
+            priority=None,
+            status=workflow_status,
+            traffic_light=derive_status(
+                instance.due_date, instance.submission_date, ref, red, yellow
+            ),
+            due_date=instance.due_date,
+            source="obligation",
+        )
 
     def _bc_user_id_for(self, user: User) -> str | None:
         """Resolve the BC user id for a local user by matching email."""

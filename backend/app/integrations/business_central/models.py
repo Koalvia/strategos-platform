@@ -182,7 +182,9 @@ class BCUserTask(BaseModel):
     assignee_id: str
     status: TaskStatus
     priority: TaskPriority
-    due_date: date
+    # Optional: a BC task without a dueDate must not break the whole board read.
+    # ``derive_status`` maps ``None`` to "Sin fecha" and the response allows it.
+    due_date: date | None = None
 
 
 class BCObligation(BaseModel):
