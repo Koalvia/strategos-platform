@@ -20,7 +20,7 @@ TRAFFIC_LIGHT_SETTINGS_ID = 1
 
 # Seed values inserted on first read (see the issue's acceptance criteria).
 DEFAULT_YELLOW_WITHIN_DAYS = 15
-DEFAULT_RED_WITHIN_DAYS = 5
+DEFAULT_RED_WITHIN_DAYS = 7
 DEFAULT_EMAIL_ON_CHANGE_ENABLED = True
 
 
