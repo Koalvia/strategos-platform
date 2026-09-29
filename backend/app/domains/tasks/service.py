@@ -20,7 +20,7 @@ from datetime import date
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.visibility import CustomerScope
+from app.core.visibility import CustomerScope, users_by_key
 from app.domains.auth.models import User
 from app.domains.obligations.schemas import ProjectObligationResponse
 from app.domains.obligations.service import ObligationsService, derive_status
@@ -254,15 +254,9 @@ class TasksService:
         settings = SettingsService(self.db).get_traffic_light()
         return settings.red_within_days, settings.yellow_within_days
 
-    def _users_by_key(self) -> dict[str, "object"]:
+    def _users_by_key(self) -> dict:
         """Map each BC user's code and name (casefolded) to the user, for lookups."""
-        users_by_key: dict[str, object] = {}
-        for bc_user in self.bc_client.get_users():
-            if bc_user.user_name:
-                users_by_key.setdefault(bc_user.user_name.casefold(), bc_user)
-            if bc_user.name:
-                users_by_key.setdefault(bc_user.name.casefold(), bc_user)
-        return users_by_key
+        return users_by_key(self.bc_client.get_users())
 
     @staticmethod
     def _technician_email(project, users_by_key: dict) -> str:
