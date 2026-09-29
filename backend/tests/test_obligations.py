@@ -287,8 +287,8 @@ def test_urgent_status_filter(frozen_client):
     assert resp.status_code == 200
     body = _items(resp)
     assert {o["status"] for o in body} == {"Urgente"}
-    # Due 2026-07-05, inside the red window (ends 2026-07-06) of 2026-07-01.
-    assert {o["id"] for o in body} == {"pobl-006", "pobl-008", "pobl-011"}
+    # Inside the red window (seed red 7 -> ends 2026-07-08) of 2026-07-01.
+    assert {o["id"] for o in body} == {"pobl-006", "pobl-008", "pobl-009", "pobl-011"}
 
 
 @pytest.mark.integration
@@ -298,8 +298,8 @@ def test_upcoming_status_filter(frozen_client):
     assert resp.status_code == 200
     body = _items(resp)
     assert {o["status"] for o in body} == {"Próximo"}
-    # Due after 2026-07-06 (red) and on or before 2026-07-16 (yellow).
-    assert {o["id"] for o in body} == {"pobl-007", "pobl-009", "pobl-010"}
+    # Due after 2026-07-08 (seed red 7) and on or before 2026-07-16 (yellow 15).
+    assert {o["id"] for o in body} == {"pobl-007", "pobl-010"}
 
 
 @pytest.mark.integration
@@ -308,7 +308,7 @@ def test_thresholds_are_read_from_the_settings_store(frozen_client, db_session):
     from app.domains.settings.schemas import TrafficLightSettingsUpdate
     from app.domains.settings.service import SettingsService
 
-    # pobl-007 is due 2026-07-10. With the seed windows (red 5 -> 2026-07-06,
+    # pobl-007 is due 2026-07-10. With the seed windows (red 7 -> 2026-07-08,
     # yellow 15 -> 2026-07-16) it lands beyond red but inside yellow -> Próximo.
     before = {o["id"]: o["status"] for o in _items(frozen_client.get(OBLIGATIONS_URL))}
     assert before["pobl-007"] == "Próximo"

@@ -10,6 +10,9 @@ export interface TrafficLightSettings {
   red_within_days: number
   email_on_change_enabled: boolean
   updated_at: string | null
+  // True only for a manager (scope sees everything); the UI hides the editor
+  // entirely when false.
+  editable: boolean
 }
 
 // The editable subset sent on a full-replacement PUT.

@@ -506,8 +506,10 @@ def test_obligaciones_proximas_counts_urgent_and_upcoming(frozen_client):
 def test_proximas_obligaciones_are_upcoming_or_overdue_ordered(frozen_client):
     """The list is the overdue + urgent + upcoming instances, ordered by due date."""
     proximas = frozen_client.get(DASHBOARD_OBLIGATIONS_URL).json()
-    # Only Vencido / Urgente / Próximo (never Al día).
-    assert {o["status"] for o in proximas} == {"Vencido", "Urgente", "Próximo"}
+    # Only Vencido / Urgente / Próximo (never Al día); the exact split between
+    # urgent and upcoming depends on the configurable thresholds.
+    assert {o["status"] for o in proximas} <= {"Vencido", "Urgente", "Próximo"}
+    assert "Al día" not in {o["status"] for o in proximas}
     # pobl-002..005 (overdue) + pobl-006..011 (urgent/upcoming) = 10 instances.
     assert {o["id"] for o in proximas} == {
         "pobl-002",
