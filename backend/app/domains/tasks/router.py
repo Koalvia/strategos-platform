@@ -2,10 +2,10 @@
 
 Task fields (title / project / assignee / priority / due date) are sourced
 read-only from Business Central, which is the system of record. The platform owns
-internal **notes** on a task. The board's workflow column is not persisted yet
-(moving a card is a client-only interaction until BC can be the store). Every
-route requires a verified user (and the ``x-api-key`` gateway header, except
-under ``TESTING=1``).
+two things: internal **notes** on a task and its workflow **status** — the latter
+moved between board columns via ``PATCH /tasks/{id}/status`` and persisted as a
+local override. Every route requires a verified user (and the ``x-api-key`` gateway
+header, except under ``TESTING=1``).
 """
 
 from fastapi import APIRouter, Depends
@@ -19,7 +19,7 @@ from app.domains.auth.utils import get_verified_user
 from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import TaskStatus
 
-from .schemas import TaskNoteCreate, TaskNoteResponse, TaskResponse
+from .schemas import TaskNoteCreate, TaskNoteResponse, TaskResponse, TaskStatusUpdate
 from .service import TasksService
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -80,6 +80,25 @@ def list_my_tasks(
     """
     service = TasksService(db, bc_client)
     return service.list_my_tasks(current_user, status=status)
+
+
+@router.patch("/{task_id}/status", response_model=TaskResponse)
+def update_task_status(
+    task_id: str,
+    data: TaskStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
+):
+    """Move a board card (task or obligation) to a new workflow state.
+
+    ``data.source`` selects the store. Persists platform-native (BC is never
+    written). Returns 404 if the item is unknown, 403 if the caller may not move it
+    (not manager, not the client's scope, and not the project technician/responsible).
+    """
+    service = TasksService(db, bc_client)
+    return service.set_status(task_id, data.status, data.source, current_user, scope)
 
 
 @router.get("/{task_id}/notes", response_model=list[TaskNoteResponse])

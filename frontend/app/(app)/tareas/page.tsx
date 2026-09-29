@@ -8,6 +8,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core"
+import { toast } from "sonner"
 
 import {
   Select,
@@ -58,7 +59,7 @@ export default function TareasPage() {
     }
   }, [status])
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const overId = event.over?.id
     if (!overId) return
 
@@ -67,15 +68,25 @@ export default function TareasPage() {
     const moved = tasks.find((t) => t.id === cardId)
     if (!moved || moved.status === toStatus) return
 
-    // Client-only move: nothing is persisted (BC is not writable for task state
-    // yet), so it survives only in this session and resets when the board reloads.
-    // When a status filter is active, a card that no longer matches drops out.
+    const previous = tasks
+    // Optimistically move the card; when a status filter is active, a card that no
+    // longer matches drops out of the view.
     setTasks((prev) => {
       const next = prev.map((t) =>
         t.id === cardId ? { ...t, status: toStatus } : t,
       )
       return status === ALL ? next : next.filter((t) => t.status === status)
     })
+
+    const res = await tasksApi.updateStatus(cardId, toStatus, moved.source)
+    if (!res.success) {
+      setTasks(previous) // roll back the optimistic move
+      toast.error(
+        res.message?.includes("Not allowed")
+          ? "No tienes permiso para mover esta tarea."
+          : "No se pudo mover la tarea. Inténtalo de nuevo.",
+      )
+    }
   }
 
   return (

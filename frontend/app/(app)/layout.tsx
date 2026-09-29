@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react"
 
 import { authApi } from "@/features/auth/api"
 import { AppSidebar } from "@/components/app-sidebar"
+import { Toaster } from "@/components/ui/sonner"
 
 interface ShellUser {
   name?: string | null
@@ -65,6 +66,7 @@ export default function AppLayout({
     <div className="flex h-screen bg-slate-50 text-slate-900">
       <AppSidebar user={user} onLogout={handleLogout} />
       <main className="flex-1 overflow-y-auto">{children}</main>
+      <Toaster />
     </div>
   )
 }

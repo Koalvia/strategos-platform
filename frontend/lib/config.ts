@@ -22,6 +22,7 @@ export const config = {
         tasks: {
           base: "/api/v1/tasks",
           board: "/api/v1/tasks/board",
+          status: (id: string) => `/api/v1/tasks/${id}/status`,
         },
         customers: {
           base: "/api/v1/customers",

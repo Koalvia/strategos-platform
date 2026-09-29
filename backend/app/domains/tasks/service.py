@@ -1,21 +1,19 @@
 """Business logic for the tasks (Tareas) domain.
 
-The board mixes two sources: **BC user tasks** (read from Business Central) and
-**obligations shown as tasks** (each project-obligation instance becomes a card).
-Both are grouped into the four workflow columns and coloured by a traffic light
-derived from their due date.
+The board mixes two sources: **BC user tasks** (read-only from Business Central)
+and **obligations shown as tasks** (each project-obligation instance becomes a
+movable card). Both are grouped into the four workflow columns and coloured by a
+traffic light derived from their due date.
 
-The workflow column is **not persisted**: a BC task shows its BC status and an
-obligation its derived column (filed -> Hecho, else Pendiente). Moving a card is a
-client-only interaction that survives only in the browser — BC is never written
-and there is no local override store, pending BC becoming writable/readable for
-``userTasks``.
+Local state lives in three small tables: ``task_notes`` (internal notes on a task),
+``task_status_overrides`` (workflow column of a BC task) and
+``obligation_task_states`` (workflow column of an obligation). BC is never written
+back; overrides are overlaid onto the read.
 
-Local state is limited to ``task_notes`` (internal notes on a task). Visibility of
-a card follows **customer scope** plus the project's technician: a manager sees
-everything; anyone else sees a card only if its project's client is in their scope
-or they are the project's technician. "Mine" maps the local user to their BC
-assignee by email.
+Moving a card is authorized by the union rule: a manager (``sees_everything``)
+moves anything; anyone else moves only cards whose project's client is in their
+scope or where they are the project's technician/responsible. "Mine" maps the
+local user to their BC assignee by email.
 """
 
 from datetime import date
@@ -29,14 +27,18 @@ from app.domains.obligations.schemas import ProjectObligationResponse
 from app.domains.obligations.service import ObligationsService, derive_status
 from app.domains.settings.service import SettingsService
 from app.integrations.business_central.client import BusinessCentralClient
-from app.integrations.business_central.models import BCUserTask, TaskStatus
+from app.integrations.business_central.models import (
+    BCProjectObligation,
+    BCUserTask,
+    TaskStatus,
+)
 
-from .models import TaskNote
+from .models import ObligationTaskState, TaskNote, TaskStatusOverride
 from .schemas import TaskAssignee, TaskNoteResponse, TaskProject, TaskResponse
 
 
 class TasksService:
-    """Serve the board (BC tasks + obligations) plus each task's local notes."""
+    """Serve the board (BC tasks + obligations) plus each item's local state."""
 
     def __init__(self, db: Session, bc_client: BusinessCentralClient):
         self.db = db
@@ -56,7 +58,7 @@ class TasksService:
         Used by "mis tareas" and the dashboard; the board uses
         :meth:`list_board_cards`. ``scope`` restricts to the caller's clients only
         (no technician/responsible union) — intentional, as callers here already
-        have the project in context.
+        have the project in context. The ``status`` filter runs after the override.
         """
         tasks = self.bc_client.get_user_tasks()
         if project_id is not None:
@@ -74,10 +76,11 @@ class TasksService:
 
         ref = date.today()
         red, yellow = self._thresholds()
+        overrides = self._status_overrides([t.id for t in tasks])
         project_names = {pid: p.name for pid, p in projects_by_id.items()}
         user_names = {u.id: u.name for u in self.bc_client.get_users()}
         responses = [
-            self._task_card(t, project_names, user_names, ref, red, yellow)
+            self._task_card(t, project_names, user_names, overrides, ref, red, yellow)
             for t in tasks
         ]
 
@@ -89,7 +92,7 @@ class TasksService:
         self, user: User, scope: CustomerScope, status: TaskStatus | None = None
     ) -> list[TaskResponse]:
         """Return the board (BC tasks + obligations). Visible if manager, or the
-        project's client is in scope, or the caller is the project's technician."""
+        project's client is in scope, or the caller is its technician/responsible."""
         ref = date.today()
         red, yellow = self._thresholds()
         projects_by_id = {p.id: p for p in self.bc_client.get_projects()}
@@ -106,10 +109,11 @@ class TasksService:
             return may_see_project(project, my_email, scope, by_key)
 
         tasks = [t for t in self.bc_client.get_user_tasks() if visible(t.project_id)]
+        overrides = self._status_overrides([t.id for t in tasks])
         project_names = {pid: p.name for pid, p in projects_by_id.items()}
         user_names = {u.id: u.name for u in self.bc_client.get_users()}
         task_cards = [
-            self._task_card(t, project_names, user_names, ref, red, yellow)
+            self._task_card(t, project_names, user_names, overrides, ref, red, yellow)
             for t in tasks
         ]
 
@@ -117,10 +121,11 @@ class TasksService:
             self.db, self.bc_client
         ).list_project_obligations(reference_date=ref, scope=None)
         obligations = [o for o in obligations if visible(o.project.id)]
+        states = self._obligation_states([o.id for o in obligations])
         ob_cards = [
             self._obligation_card(
                 o,
-                self._initial_status(o),
+                states.get(o.id) or self._initial_status(o),
                 self._technician_assignee(projects_by_id.get(o.project.id), by_key),
             )
             for o in obligations
@@ -140,7 +145,85 @@ class TasksService:
             return []
         return self.list_tasks(status=status, assignee_id=bc_user_id)
 
-    # ---------------------------------------------------------------- notes
+    # ---------------------------------------------------------------- writes
+
+    def set_status(
+        self,
+        item_id: str,
+        new_status: TaskStatus,
+        source: str,
+        user: User,
+        scope: CustomerScope,
+    ) -> TaskResponse:
+        """Move a board card to a new workflow column, persisted platform-native.
+
+        ``source`` selects the store (BC task vs obligation). Authorized by the union
+        rule (manager, client in scope, or project technician/responsible). 404 if the
+        item is unknown, 403 otherwise. The override is upserted (idempotent).
+        """
+        if source == "obligation":
+            return self._set_obligation_status(item_id, new_status, user, scope)
+        return self._set_task_status(item_id, new_status, user, scope)
+
+    def _set_task_status(
+        self, task_id: str, new_status: TaskStatus, user: User, scope: CustomerScope
+    ) -> TaskResponse:
+        task = self._get_task(task_id)
+        if not self._may_move(task.project_id, user, scope):
+            raise HTTPException(
+                status_code=403, detail="Not allowed to change this task's status"
+            )
+        row = (
+            self.db.query(TaskStatusOverride)
+            .filter(TaskStatusOverride.task_id == task_id)
+            .first()
+        )
+        if row is None:
+            self.db.add(
+                TaskStatusOverride(
+                    task_id=task_id, status=new_status, updated_by=user.id
+                )
+            )
+        else:
+            row.status = new_status
+            row.updated_by = user.id
+        self.db.commit()
+
+        ref = date.today()
+        red, yellow = self._thresholds()
+        project_names = {p.id: p.name for p in self.bc_client.get_projects()}
+        user_names = {u.id: u.name for u in self.bc_client.get_users()}
+        return self._task_card(
+            task, project_names, user_names, {task_id: new_status}, ref, red, yellow
+        )
+
+    def _set_obligation_status(
+        self, instance_id: str, new_status: TaskStatus, user: User, scope: CustomerScope
+    ) -> TaskResponse:
+        instance = self._get_obligation(instance_id)
+        if not self._may_move(instance.project_id, user, scope):
+            raise HTTPException(
+                status_code=403, detail="Not allowed to change this obligation"
+            )
+        row = (
+            self.db.query(ObligationTaskState)
+            .filter(ObligationTaskState.bc_obligation_id == instance_id)
+            .first()
+        )
+        if row is None:
+            self.db.add(
+                ObligationTaskState(
+                    bc_obligation_id=instance_id, status=new_status, updated_by=user.id
+                )
+            )
+        else:
+            row.status = new_status
+            row.updated_by = user.id
+        self.db.commit()
+
+        # Build the card from the instance already in hand — no second obligations
+        # read (avoids re-fetching the whole obligations list just to shape one card).
+        return self._obligation_card_from_instance(instance, new_status)
 
     def add_note(self, task_id: str, author: User, body: str) -> TaskNoteResponse:
         """Add an internal note to a task (404 if the BC task is unknown)."""
@@ -182,6 +265,57 @@ class TasksService:
             return None
         return TaskAssignee(id=bc_user.id, name=bc_user.name)
 
+    def _may_move(self, project_id: str, user: User, scope: CustomerScope) -> bool:
+        """Union rule: manager, client in scope, or project technician/responsible."""
+        if scope.sees_everything:
+            return True
+        project = self._get_project(project_id)
+        if project is None:
+            return False
+        return may_see_project(project, user.email or "", scope, self._users_by_key())
+
+    def _get_project(self, project_id: str):
+        """Return the BC project with ``project_id``, or None."""
+        for project in self.bc_client.get_projects():
+            if project.id == project_id:
+                return project
+        return None
+
+    def _obligation_card_from_instance(
+        self, instance: BCProjectObligation, workflow_status: TaskStatus
+    ) -> TaskResponse:
+        """Shape one obligation card from the in-hand instance (no obligations re-read)."""
+        ref = date.today()
+        red, yellow = self._thresholds()
+        project = self._get_project(instance.project_id)
+        customer_id = project.customer_id if project is not None else ""
+        customer_name = (
+            self.bc_client.get_customer_names([customer_id]).get(customer_id, "")
+            if customer_id
+            else ""
+        )
+        obligation = next(
+            (o for o in self.bc_client.get_obligations() if o.id == instance.obligation_id),
+            None,
+        )
+        title = obligation.name if obligation is not None and obligation.name else instance.obligation_id
+        return TaskResponse(
+            id=instance.id,
+            title=title,
+            project=TaskProject(
+                id=instance.project_id, name=project.name if project is not None else ""
+            ),
+            client=TaskProject(id=customer_id, name=customer_name),
+            assignee=self._technician_assignee(project, self._users_by_key()),
+            priority=None,
+            status=workflow_status,
+            traffic_light=derive_status(
+                instance.due_date, instance.submission_date, ref, red, yellow
+            ),
+            due_date=instance.due_date,
+            source="obligation",
+        )
+
     def _bc_user_id_for(self, user: User) -> str | None:
         """Resolve the BC user id for a local user by matching email."""
         email = (user.email or "").casefold()
@@ -190,6 +324,28 @@ class TasksService:
                 return bc_user.id
         return None
 
+    def _status_overrides(self, task_ids: list[str]) -> dict[str, TaskStatus]:
+        """Return ``{task_id: status}`` for BC tasks that have a workflow override."""
+        if not task_ids:
+            return {}
+        rows = (
+            self.db.query(TaskStatusOverride)
+            .filter(TaskStatusOverride.task_id.in_(task_ids))
+            .all()
+        )
+        return {row.task_id: row.status for row in rows}
+
+    def _obligation_states(self, ids: list[str]) -> dict[str, TaskStatus]:
+        """Return ``{obligation_id: status}`` for obligations with a workflow override."""
+        if not ids:
+            return {}
+        rows = (
+            self.db.query(ObligationTaskState)
+            .filter(ObligationTaskState.bc_obligation_id.in_(ids))
+            .all()
+        )
+        return {row.bc_obligation_id: row.status for row in rows}
+
     def _get_task(self, task_id: str) -> BCUserTask:
         """Return the BC task with ``task_id``, or raise 404 if unknown."""
         for task in self.bc_client.get_user_tasks():
@@ -197,13 +353,20 @@ class TasksService:
                 return task
         raise HTTPException(status_code=404, detail="Task not found")
 
+    def _get_obligation(self, instance_id: str) -> BCProjectObligation:
+        """Return the obligation instance with ``instance_id``, or raise 404."""
+        for instance in self.bc_client.get_project_obligations():
+            if instance.id == instance_id:
+                return instance
+        raise HTTPException(status_code=404, detail="Obligation not found")
+
     def _require_task(self, task_id: str) -> None:
         """Raise 404 unless ``task_id`` names a task known to BC."""
         self._get_task(task_id)
 
     @staticmethod
     def _initial_status(obligation: ProjectObligationResponse) -> TaskStatus:
-        """Derive an obligation's column: filed -> Hecho, else Pendiente."""
+        """Derive an obligation's starting column: filed -> Hecho, else Pendiente."""
         if obligation.submission_date is not None:
             return TaskStatus.done
         return TaskStatus.pending
@@ -213,11 +376,12 @@ class TasksService:
         task: BCUserTask,
         project_names: dict[str, str],
         user_names: dict[str, str],
+        overrides: dict[str, TaskStatus],
         reference_date: date,
         red_within_days: int,
         yellow_within_days: int,
     ) -> TaskResponse:
-        """Map a BC user task to a board card (BC status + traffic light)."""
+        """Map a BC user task to a board card (workflow override + traffic light)."""
         return TaskResponse(
             id=task.id,
             title=task.title,
@@ -228,7 +392,7 @@ class TasksService:
                 id=task.assignee_id, name=user_names.get(task.assignee_id, "")
             ),
             priority=task.priority,
-            status=task.status,
+            status=overrides.get(task.id, task.status),
             traffic_light=derive_status(
                 task.due_date, None, reference_date, red_within_days, yellow_within_days
             ),

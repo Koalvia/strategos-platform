@@ -56,6 +56,13 @@ class TaskResponse(BaseModel):
     source: Literal["task", "obligation"] = "task"
 
 
+class TaskStatusUpdate(BaseModel):
+    """Request body to move a task/obligation card to a new workflow state."""
+
+    status: TaskStatus
+    source: Literal["task", "obligation"] = "task"
+
+
 class TaskNoteCreate(BaseModel):
     """Request body to add an internal note to a task."""
 
