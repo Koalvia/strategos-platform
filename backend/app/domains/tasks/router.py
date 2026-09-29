@@ -72,21 +72,22 @@ def list_board(
     return service.list_board_cards(current_user, scope, status=status)
 
 
-@router.put("/board/order", status_code=204)
+@router.put("/board/order")
 def reorder_board(
     data: BoardOrderUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
     scope: CustomerScope = Depends(get_customer_scope),
-):
+) -> dict:
     """Set the shared vertical order of a board column's cards (global, persisted).
 
     Body is the column's cards in the desired order. 403 if the caller may not move a
-    listed card, 404 if one is unknown.
+    listed card, 404 if unknown, 422 if the cards span more than one column.
     """
     service = TasksService(db, bc_client)
     service.reorder_board(data.ordered, current_user, scope)
+    return {"ok": True}
 
 
 @router.get("/mine", response_model=list[TaskResponse])

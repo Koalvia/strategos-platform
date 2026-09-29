@@ -39,7 +39,7 @@ def test_manager_reorder_persists_on_board(client_as):
 
         reversed_order = list(reversed(pending))
         res = client.put(ORDER_URL, json={"ordered": reversed_order})
-        assert res.status_code == 204
+        assert res.status_code == 200
 
         after = _column(client.get(BOARD_URL).json(), "Pendiente")
     assert [c["id"] for c in after] == [c["id"] for c in reversed_order]
@@ -65,8 +65,8 @@ def test_reorder_is_idempotent_single_row(client_as, db_session):
     with client_as(MANAGER_EMAIL) as client:
         board = client.get(BOARD_URL).json()
         pending = _column(board, "Pendiente")[:2]
-        assert client.put(ORDER_URL, json={"ordered": pending}).status_code == 204
-        assert client.put(ORDER_URL, json={"ordered": pending}).status_code == 204
+        assert client.put(ORDER_URL, json={"ordered": pending}).status_code == 200
+        assert client.put(ORDER_URL, json={"ordered": pending}).status_code == 200
     rows = (
         db_session.query(BoardCardPosition)
         .filter(BoardCardPosition.card_id == pending[0]["id"])
