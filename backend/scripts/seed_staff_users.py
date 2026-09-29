@@ -1,6 +1,6 @@
 """Idempotent seed for the Strategos staff shown in the Usuarios directory.
 
-These are display-only accounts: they carry a name, role and ``@estrategos.ad``
+These are display-only accounts: they carry a name, role and ``@strategos.ad``
 email (all non-sensitive display values) so the Usuarios page can render "who's
 who". They are **not** intended to log in this round, so each row gets a random,
 unusable ``hashed_password`` (a bcrypt hash of a throwaway secret nobody keeps) —
@@ -32,12 +32,12 @@ from app.domains.auth.utils import get_password_hash  # noqa: E402
 
 # (name, role, email) for the Strategos staff mirrored from the Usuarios mock.
 STAFF: list[tuple[str, str, str]] = [
-    ("Marc Solé", "Soci Director", "marc@estrategos.ad"),
-    ("Anna Ferrer", "Responsable Fiscal", "anna@estrategos.ad"),
-    ("Laura Puig", "Responsable Laboral", "laura@estrategos.ad"),
-    ("Jordi Vila", "Tècnic Comptable", "jordi@estrategos.ad"),
-    ("Núria Camps", "Tècnica Administrativa", "nuria@estrategos.ad"),
-    ("Pol Ribas", "Administració", "pol@estrategos.ad"),
+    ("Marc Solé", "Soci Director", "marc@strategos.ad"),
+    ("Anna Ferrer", "Responsable Fiscal", "anna@strategos.ad"),
+    ("Laura Puig", "Responsable Laboral", "laura@strategos.ad"),
+    ("Jordi Vila", "Tècnic Comptable", "jordi@strategos.ad"),
+    ("Núria Camps", "Tècnica Administrativa", "nuria@strategos.ad"),
+    ("Pol Ribas", "Administració", "pol@strategos.ad"),
 ]
 
 

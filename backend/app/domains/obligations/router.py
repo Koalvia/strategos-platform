@@ -25,7 +25,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app import logger
-from app.core.dependencies import get_business_central_client
+from app.core.dependencies import get_business_central_client, get_customer_scope
+from app.core.visibility import CustomerScope
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
@@ -99,9 +100,14 @@ def list_project_obligations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
     reference_date: date = Depends(get_reference_date),
 ):
-    """List one page of per-project obligation instances, read-only from BC"""
+    """List one page of per-project obligation instances, read-only from BC.
+
+    Visible by union: a manager sees every obligation; anyone else sees those of the
+    clients assigned to them OR of projects where they are technician/responsible.
+    """
     start_time = time.perf_counter()
     start_hour = datetime.now().strftime("%H:%M:%S")
 
@@ -113,6 +119,8 @@ def list_project_obligations(
         due_before=due_before,
         page=page,
         page_size=page_size,
+        scope=scope,
+        user_email=current_user.email,
     )
 
     duration = time.perf_counter() - start_time

@@ -1,16 +1,18 @@
 """HTTP routes for the tasks (Tareas) domain.
 
-Tasks are sourced read-only from Business Central, which is the system of record,
-so this round exposes no task create/update from the platform. The only writes
-are platform-native internal **notes** on a task (the domain's one local table).
-Every route requires a verified user (and the ``x-api-key`` gateway header,
-except under ``TESTING=1``).
+Task fields (title / project / assignee / priority / due date) are sourced
+read-only from Business Central, which is the system of record. The platform owns
+internal **notes** on a task. The board's workflow column is not persisted yet
+(moving a card is a client-only interaction until BC can be the store). Every
+route requires a verified user (and the ``x-api-key`` gateway header, except
+under ``TESTING=1``).
 """
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_business_central_client
+from app.core.dependencies import get_business_central_client, get_customer_scope
+from app.core.visibility import CustomerScope
 from app.db.session import get_db
 from app.domains.auth.models import User
 from app.domains.auth.utils import get_verified_user
@@ -31,18 +33,37 @@ def list_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_user),
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
 ):
-    """List tasks across the firm, sourced read-only from Business Central.
+    """List BC user tasks (no obligations), scoped by client.
 
-    Each task carries its title, the project it belongs to, the assignee, a
-    priority (Alta / Media / Baja) and a status (Pendiente / En curso / Hecho)
-    the frontend groups into board columns. Optional query params (all compose):
-    ``status``, ``project_id`` and ``assignee_id``.
+    Used by the project detail view and "mis tareas". Each card carries its workflow
+    ``status`` and a traffic-light colour derived from its due date. Optional query
+    params compose: ``status``, ``project_id`` and ``assignee_id``. Scoped to the
+    caller's clients (a manager sees all). The Tareas board uses ``GET /tasks/board``.
     """
     service = TasksService(db, bc_client)
     return service.list_tasks(
-        status=status, project_id=project_id, assignee_id=assignee_id
+        status=status, project_id=project_id, assignee_id=assignee_id, scope=scope
     )
+
+
+@router.get("/board", response_model=list[TaskResponse])
+def list_board(
+    status: TaskStatus | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
+):
+    """The Tareas board: BC tasks + obligations shown as tasks, scoped by client.
+
+    Each card carries its workflow column (``status``), a traffic-light colour from
+    its due date, and a ``source`` (task/obligation). Visible under the union rule:
+    manager, client in scope, or project technician. ``status`` narrows to a column.
+    """
+    service = TasksService(db, bc_client)
+    return service.list_board_cards(current_user, scope, status=status)
 
 
 @router.get("/mine", response_model=list[TaskResponse])

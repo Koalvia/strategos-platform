@@ -465,7 +465,8 @@ def test_generated_data_reflected_in_kpis(frozen_client):
 @pytest.mark.integration
 def test_tareas_pendientes_counts_unfinished_tasks(frozen_client):
     """pending-tasks.pending == tasks not in Hecho; total == all tasks."""
-    tasks = frozen_client.get(TASKS_URL).json()
+    # The board also carries obligation cards now; the KPI counts BC tasks only.
+    tasks = [c for c in frozen_client.get(TASKS_URL).json() if c["source"] == "task"]
     not_done = [t for t in tasks if t["status"] != "Hecho"]
     kpi = frozen_client.get(PENDING_TASKS_URL).json()
     assert kpi == {"pending": len(not_done), "total": len(tasks)}

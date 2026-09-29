@@ -21,6 +21,7 @@ export const config = {
         },
         tasks: {
           base: "/api/v1/tasks",
+          board: "/api/v1/tasks/board",
         },
         customers: {
           base: "/api/v1/customers",

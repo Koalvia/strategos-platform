@@ -31,10 +31,16 @@ class ProjectStatus(str, Enum):
 
 
 class TaskStatus(str, Enum):
-    """Board column a user task sits in."""
+    """Board column a user task sits in.
+
+    ``waiting_client`` is platform-only: Business Central never emits it (it has no
+    such column), so it originates solely from a local status override. Members are
+    declared in board display order.
+    """
 
     pending = "Pendiente"
     in_progress = "En curso"
+    waiting_client = "Esperando información / respuesta del cliente"
     done = "Hecho"
 
 
@@ -176,7 +182,9 @@ class BCUserTask(BaseModel):
     assignee_id: str
     status: TaskStatus
     priority: TaskPriority
-    due_date: date
+    # Optional: a BC task without a dueDate must not break the whole board read.
+    # ``derive_status`` maps ``None`` to "Sin fecha" and the response allows it.
+    due_date: date | None = None
 
 
 class BCObligation(BaseModel):

@@ -13,7 +13,11 @@ each implementation.
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.visibility import CustomerScope
+from app.core.visibility import (
+    CustomerScope,
+    may_see_project,
+    users_by_key,
+)
 from app.integrations.business_central.client import (
     DEFAULT_PROJECTS_PAGE_SIZE,
     BusinessCentralClient,
@@ -40,50 +44,105 @@ class ProjectsService:
         scope: CustomerScope | None = None,
         cursor: str | None = None,
         page_size: int = DEFAULT_PROJECTS_PAGE_SIZE,
+        user_email: str | None = None,
     ) -> ProjectPageResponse:
         """Return one page of projects, optionally filtered. Filters compose.
 
-        ``scope`` limits the page to the projects of the caller's own customers;
-        omitting it returns every project.
+        Visible by union: the caller's own customers, or projects where they are the
+        technician/responsible. Managers (scope None / sees everything) see all.
         """
-        page = self.bc_client.get_projects_page(
-            search=search,
-            project_type=project_type,
-            entity_type=entity_type,
-            status=status,
-            customer_id=customer_id,
-            customer_ids=list(scope.customer_ids) if scope and scope.customer_ids is not None else None,
-            cursor=cursor,
-            page_size=page_size,
-        )
-        items = page.items
+        if scope is None or scope.sees_everything:
+            page = self.bc_client.get_projects_page(
+                search=search,
+                project_type=project_type,
+                entity_type=entity_type,
+                status=status,
+                customer_id=customer_id,
+                cursor=cursor,
+                page_size=page_size,
+            )
+            items = page.items
+            next_cursor = page.next_cursor
+            no_assigned_customers = False
+        else:
+            # Union can't be pushed to BC (technician projects have out-of-scope
+            # customers), so read all and filter/paginate here (offset cursor).
+            by_key = users_by_key(self.bc_client.get_users())
+            visible = [
+                p
+                for p in self.bc_client.get_projects()
+                if may_see_project(p, user_email or "", scope, by_key)
+            ]
+            visible = self._apply_filters(
+                visible, search, project_type, entity_type, status, customer_id
+            )
+            # A scoped cursor is our own integer offset; ignore a stray non-integer
+            # one (e.g. a BC opaque cursor from a manager session) instead of 500ing.
+            try:
+                offset = int(cursor) if cursor else 0
+            except ValueError:
+                offset = 0
+            items = visible[offset : offset + page_size]
+            next_offset = offset + page_size
+            next_cursor = str(next_offset) if next_offset < len(visible) else None
+            no_assigned_customers = scope.customer_ids == () and not visible
+
         customer_ids = {p.customer_id for p in items if p.customer_id}
         names_by_id = self.bc_client.get_customer_names(list(customer_ids))
         return ProjectPageResponse(
             items=[self._to_response(p, names_by_id) for p in items],
-            next_cursor=page.next_cursor,
-            no_assigned_customers=bool(scope and scope.customer_ids == ()),
+            next_cursor=next_cursor,
+            no_assigned_customers=no_assigned_customers,
         )
 
     def get_project(
-        self, project_id: str, scope: CustomerScope | None = None
+        self,
+        project_id: str,
+        scope: CustomerScope | None = None,
+        user_email: str | None = None,
     ) -> ProjectResponse:
-        """Return a single project by id, or raise 404 if it does not exist.
+        """Return a single project by id, or 404 if unknown or not visible.
 
-        A project whose customer falls outside ``scope`` is a 404 too.
+        Visible by union: client in scope, or the caller is technician/responsible.
         """
-        # Narrowed to the caller's customers, so a scoped lookup never sweeps the
-        # whole table; a manager's scope is None and reads everything as before.
-        scoped_ids = (
-            list(scope.customer_ids)
-            if scope and scope.customer_ids is not None
-            else None
-        )
-        for project in self.bc_client.get_projects(customer_ids=scoped_ids):
-            if project.id == project_id:
+        for project in self.bc_client.get_projects():
+            if project.id != project_id:
+                continue
+            visible = scope is None or scope.sees(project.customer_id)
+            if not visible and user_email:
+                visible = may_see_project(
+                    project, user_email, scope, users_by_key(self.bc_client.get_users())
+                )
+            if visible:
                 names_by_id = self.bc_client.get_customer_names([project.customer_id])
                 return self._to_response(project, names_by_id)
+            break
         raise HTTPException(status_code=404, detail="Project not found")
+
+    @staticmethod
+    def _apply_filters(
+        projects: list[BCProject],
+        search: str | None,
+        project_type: str | None,
+        entity_type: str | None,
+        status: ProjectStatus | None,
+        customer_id: str | None,
+    ) -> list[BCProject]:
+        """Apply the same filters as ``get_projects_page`` (used for the union page)."""
+        if search:
+            needle = search.casefold()
+            projects = [p for p in projects if needle in p.name.casefold()]
+        if customer_id is not None:
+            projects = [p for p in projects if p.customer_id == customer_id]
+        if project_type is not None:
+            wanted = project_type.casefold()
+            projects = [p for p in projects if (p.project_type or "").casefold() == wanted]
+        if entity_type is not None:
+            wanted = entity_type.casefold()
+            projects = [p for p in projects if (p.entity_type or "").casefold() == wanted]
+        if status is not None:
+            projects = [p for p in projects if p.status is status]
+        return projects
 
     @staticmethod
     def _to_response(
