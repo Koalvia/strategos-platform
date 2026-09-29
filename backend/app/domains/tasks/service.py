@@ -23,7 +23,7 @@ from datetime import date
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.visibility import CustomerScope, users_by_key
+from app.core.visibility import CustomerScope, may_see_project, users_by_key
 from app.domains.auth.models import User
 from app.domains.obligations.schemas import ProjectObligationResponse
 from app.domains.obligations.service import ObligationsService, derive_status
@@ -54,7 +54,9 @@ class TasksService:
         """Return the BC user tasks (no obligations), optionally filtered.
 
         Used by "mis tareas" and the dashboard; the board uses
-        :meth:`list_board_cards`. ``scope`` restricts to the caller's clients.
+        :meth:`list_board_cards`. ``scope`` restricts to the caller's clients only
+        (no technician/responsible union) — intentional, as callers here already
+        have the project in context.
         """
         tasks = self.bc_client.get_user_tasks()
         if project_id is not None:
@@ -93,19 +95,15 @@ class TasksService:
         projects_by_id = {p.id: p for p in self.bc_client.get_projects()}
         by_key = self._users_by_key()
         my_email = (user.email or "").casefold()
-        my_projects = {
-            pid
-            for pid, project in projects_by_id.items()
-            if self._technician_email(project, by_key) == my_email
-        }
 
         def visible(project_id: str) -> bool:
+            # Union rule: manager, client in scope, or project technician/responsible.
             if scope.sees_everything:
                 return True
             project = projects_by_id.get(project_id)
-            if project is not None and scope.sees(project.customer_id):
-                return True
-            return project_id in my_projects
+            if project is None:
+                return False
+            return may_see_project(project, my_email, scope, by_key)
 
         tasks = [t for t in self.bc_client.get_user_tasks() if visible(t.project_id)]
         project_names = {pid: p.name for pid, p in projects_by_id.items()}
@@ -174,14 +172,6 @@ class TasksService:
     def _users_by_key(self) -> dict:
         """Map each BC user's code and name (casefolded) to the user, for lookups."""
         return users_by_key(self.bc_client.get_users())
-
-    @staticmethod
-    def _technician_email(project, users_by_key: dict) -> str:
-        """The email of a project's technician (projectManager code/name), or ''."""
-        if project is None or not project.technician:
-            return ""
-        bc_user = users_by_key.get(project.technician.casefold())
-        return (bc_user.email or "").casefold() if bc_user is not None else ""
 
     def _technician_assignee(self, project, users_by_key: dict) -> TaskAssignee | None:
         """The project's technician as an assignee ref, or None if unresolved."""

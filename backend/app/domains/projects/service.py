@@ -76,7 +76,12 @@ class ProjectsService:
             visible = self._apply_filters(
                 visible, search, project_type, entity_type, status, customer_id
             )
-            offset = int(cursor) if cursor else 0
+            # A scoped cursor is our own integer offset; ignore a stray non-integer
+            # one (e.g. a BC opaque cursor from a manager session) instead of 500ing.
+            try:
+                offset = int(cursor) if cursor else 0
+            except ValueError:
+                offset = 0
             items = visible[offset : offset + page_size]
             next_offset = offset + page_size
             next_cursor = str(next_offset) if next_offset < len(visible) else None

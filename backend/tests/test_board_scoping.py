@@ -25,8 +25,10 @@ OBLIGATIONS_URL = "/api/v1/obligations"
 
 MANAGER_EMAIL = "marc@strategos.ad"
 SCOPED_EMAIL = "jordi@strategos.ad"
-UNLINKED_EMAIL = "anna@strategos.ad"  # no customers, but responsible of some projects
+RESPONSIBLE_EMAIL = "anna@strategos.ad"  # no customers, but responsible of some projects
 NOBODY_EMAIL = "pol@strategos.ad"  # no resource, no technician/responsible link
+# Projects Anna Ferrer is the responsible of (see projects.json fixture).
+ANNA_RESPONSIBLE_PROJECTS = {"proj-003", "proj-004", "proj-007", "proj-012"}
 
 SCOPED_CUSTOMERS = {"cust-001", "cust-002"}
 SCOPED_PROJECTS = {"proj-001", "proj-002", "proj-003", "proj-004"}
@@ -113,11 +115,25 @@ def test_scoped_user_sees_union_of_client_and_technician_projects(client_as):
 
 
 @pytest.mark.integration
-def test_unlinked_user_sees_empty_board(client_as):
-    """A user with no client scope sees no tasks and no obligations."""
-    with client_as(UNLINKED_EMAIL) as client:
+def test_user_without_any_link_sees_empty_board(client_as):
+    """A user with no client scope and no technician/responsible link sees nothing."""
+    with client_as(NOBODY_EMAIL) as client:
         board = client.get(BOARD_URL).json()
     assert board == []
+
+
+@pytest.mark.integration
+def test_responsible_user_sees_their_project_cards(client_as):
+    """A responsible-only user's board carries their projects' cards (not just clients').
+
+    Anna has no client scope but is responsible of proj-003/004/007/012. The board's
+    union rule includes the responsible (mirroring the Obligaciones page), so its
+    obligation card pobl-004 (proj-003) shows and nothing outside her projects leaks.
+    """
+    with client_as(RESPONSIBLE_EMAIL) as client:
+        board = client.get(BOARD_URL).json()
+    assert any(c["source"] == "obligation" and c["id"] == "pobl-004" for c in board)
+    assert {c["project"]["id"] for c in board} <= ANNA_RESPONSIBLE_PROJECTS
 
 
 # --------------------------------------------------------------------------- #
@@ -149,7 +165,7 @@ def test_scoped_user_sees_client_and_technician_obligations(client_as):
 @pytest.mark.integration
 def test_responsible_sees_their_project_obligations(client_as):
     """Anna is responsible of proj-003 (not her client) → sees its obligation pobl-004."""
-    with client_as(UNLINKED_EMAIL) as client:
+    with client_as(RESPONSIBLE_EMAIL) as client:
         items = client.get(OBLIGATIONS_URL).json()["items"]
     assert any(o["id"] == "pobl-004" for o in items)
 
