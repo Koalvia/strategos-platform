@@ -43,4 +43,16 @@ export const tasksApi = {
     })
     return response.json()
   },
+
+  // Persist the shared vertical order of one column's cards (top-to-bottom).
+  async reorder(
+    ordered: { id: string; source: TaskSource }[],
+  ): Promise<{ success: boolean; message?: string }> {
+    const response = await fetch(`/api/tasks/board/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ordered }),
+    })
+    return response.json()
+  },
 }

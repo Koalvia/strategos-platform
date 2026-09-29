@@ -33,8 +33,19 @@ from app.integrations.business_central.models import (
     TaskStatus,
 )
 
-from .models import ObligationTaskState, TaskNote, TaskStatusOverride
-from .schemas import TaskAssignee, TaskNoteResponse, TaskProject, TaskResponse
+from .models import (
+    BoardCardPosition,
+    ObligationTaskState,
+    TaskNote,
+    TaskStatusOverride,
+)
+from .schemas import (
+    BoardOrderItem,
+    TaskAssignee,
+    TaskNoteResponse,
+    TaskProject,
+    TaskResponse,
+)
 
 
 class TasksService:
@@ -132,6 +143,14 @@ class TasksService:
         ]
 
         cards = task_cards + ob_cards
+        # Shared vertical order: positioned cards first (by position), rest after in
+        # backend order (stable sort keeps it; per-column order survives regrouping).
+        positions = self._card_positions()
+        cards.sort(
+            key=lambda c: (0, positions[(c.source, c.id)])
+            if (c.source, c.id) in positions
+            else (1, 0)
+        )
         if status is not None:
             cards = [c for c in cards if c.status is status]
         return cards
@@ -224,6 +243,56 @@ class TasksService:
         # Build the card from the instance already in hand — no second obligations
         # read (avoids re-fetching the whole obligations list just to shape one card).
         return self._obligation_card_from_instance(instance, new_status)
+
+    def reorder_board(
+        self, ordered: list[BoardOrderItem], user: User, scope: CustomerScope
+    ) -> None:
+        """Persist the shared vertical order of a column's cards (position=index).
+
+        All-or-nothing: caller must be able to move every card (union); 404 if unknown.
+        """
+        tasks_by_id = {t.id: t for t in self.bc_client.get_user_tasks()}
+        obligations_by_id = {
+            o.id: o for o in self.bc_client.get_project_obligations()
+        }
+        for item in ordered:
+            if item.source == "obligation":
+                instance = obligations_by_id.get(item.id)
+                project_id = instance.project_id if instance is not None else None
+            else:
+                task = tasks_by_id.get(item.id)
+                project_id = task.project_id if task is not None else None
+            if project_id is None:
+                raise HTTPException(
+                    status_code=404, detail=f"Card {item.id} not found"
+                )
+            if not self._may_move(project_id, user, scope):
+                raise HTTPException(
+                    status_code=403, detail="Not allowed to reorder this card"
+                )
+
+        for index, item in enumerate(ordered):
+            row = (
+                self.db.query(BoardCardPosition)
+                .filter(
+                    BoardCardPosition.source == item.source,
+                    BoardCardPosition.card_id == item.id,
+                )
+                .first()
+            )
+            if row is None:
+                self.db.add(
+                    BoardCardPosition(
+                        card_id=item.id,
+                        source=item.source,
+                        position=index,
+                        updated_by=user.id,
+                    )
+                )
+            else:
+                row.position = index
+                row.updated_by = user.id
+        self.db.commit()
 
     def add_note(self, task_id: str, author: User, body: str) -> TaskNoteResponse:
         """Add an internal note to a task (404 if the BC task is unknown)."""
@@ -334,6 +403,11 @@ class TasksService:
             .all()
         )
         return {row.task_id: row.status for row in rows}
+
+    def _card_positions(self) -> dict[tuple[str, str], int]:
+        """Return ``{(source, card_id): position}`` for all manually-ordered cards."""
+        rows = self.db.query(BoardCardPosition).all()
+        return {(row.source, row.card_id): row.position for row in rows}
 
     def _obligation_states(self, ids: list[str]) -> dict[str, TaskStatus]:
         """Return ``{obligation_id: status}`` for obligations with a workflow override."""

@@ -19,7 +19,13 @@ from app.domains.auth.utils import get_verified_user
 from app.integrations.business_central.client import BusinessCentralClient
 from app.integrations.business_central.models import TaskStatus
 
-from .schemas import TaskNoteCreate, TaskNoteResponse, TaskResponse, TaskStatusUpdate
+from .schemas import (
+    BoardOrderUpdate,
+    TaskNoteCreate,
+    TaskNoteResponse,
+    TaskResponse,
+    TaskStatusUpdate,
+)
 from .service import TasksService
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -64,6 +70,23 @@ def list_board(
     """
     service = TasksService(db, bc_client)
     return service.list_board_cards(current_user, scope, status=status)
+
+
+@router.put("/board/order", status_code=204)
+def reorder_board(
+    data: BoardOrderUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_user),
+    bc_client: BusinessCentralClient = Depends(get_business_central_client),
+    scope: CustomerScope = Depends(get_customer_scope),
+):
+    """Set the shared vertical order of a board column's cards (global, persisted).
+
+    Body is the column's cards in the desired order. 403 if the caller may not move a
+    listed card, 404 if one is unknown.
+    """
+    service = TasksService(db, bc_client)
+    service.reorder_board(data.ordered, current_user, scope)
 
 
 @router.get("/mine", response_model=list[TaskResponse])

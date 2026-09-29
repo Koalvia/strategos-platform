@@ -1,14 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core"
-import { toast } from "sonner"
 
 import {
   Select,
@@ -28,11 +20,6 @@ export default function TareasPage() {
   const [status, setStatus] = useState<string>(ALL)
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
-
-  // A small activation distance so a click on a card is not read as a drag.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  )
 
   useEffect(() => {
     let active = true
@@ -59,36 +46,6 @@ export default function TareasPage() {
     }
   }, [status])
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const overId = event.over?.id
-    if (!overId) return
-
-    const cardId = String(event.active.id)
-    const toStatus = String(overId) as TaskStatus
-    const moved = tasks.find((t) => t.id === cardId)
-    if (!moved || moved.status === toStatus) return
-
-    const previous = tasks
-    // Optimistically move the card; when a status filter is active, a card that no
-    // longer matches drops out of the view.
-    setTasks((prev) => {
-      const next = prev.map((t) =>
-        t.id === cardId ? { ...t, status: toStatus } : t,
-      )
-      return status === ALL ? next : next.filter((t) => t.status === status)
-    })
-
-    const res = await tasksApi.updateStatus(cardId, toStatus, moved.source)
-    if (!res.success) {
-      setTasks(previous) // roll back the optimistic move
-      toast.error(
-        res.message?.includes("Not allowed")
-          ? "No tienes permiso para mover esta tarea."
-          : "No se pudo mover la tarea. Inténtalo de nuevo.",
-      )
-    }
-  }
-
   return (
     <div className="px-8 py-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -109,9 +66,7 @@ export default function TareasPage() {
       </div>
 
       <div className="mt-6">
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-          <TasksBoard tasks={tasks} loading={loading} />
-        </DndContext>
+        <TasksBoard tasks={tasks} loading={loading} />
       </div>
     </div>
   )

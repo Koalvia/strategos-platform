@@ -21,6 +21,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy import (
     Enum as SAEnum,
@@ -85,6 +86,32 @@ class ObligationTaskState(Base):
     # are not rows in this database.
     bc_obligation_id = Column(String, nullable=False, unique=True, index=True)
     status = Column(SAEnum(TaskStatus), nullable=False)
+    updated_by = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class BoardCardPosition(Base):
+    """The shared vertical order of a card within its board column.
+
+    One global row per card (``(source, card_id)`` unique), independent of the status
+    override so reordering never pins a column; cards without a row keep backend order.
+    """
+
+    __tablename__ = "board_card_positions"
+    __table_args__ = (
+        UniqueConstraint("source", "card_id", name="uq_board_card_positions_card"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Opaque BC id: a user-task id ("task-001") or an obligation instance id
+    # ("pobl-001"). No FK: neither is a row in this database.
+    card_id = Column(String, nullable=False, index=True)
+    source = Column(String, nullable=False)  # "task" | "obligation"
+    position = Column(Integer, nullable=False)
     updated_by = Column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
