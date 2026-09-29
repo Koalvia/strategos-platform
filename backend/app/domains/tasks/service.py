@@ -19,6 +19,7 @@ local user to their BC assignee by email.
 from datetime import date
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.visibility import CustomerScope, may_see_project, users_by_key
@@ -192,21 +193,11 @@ class TasksService:
             raise HTTPException(
                 status_code=403, detail="Not allowed to change this task's status"
             )
-        row = (
-            self.db.query(TaskStatusOverride)
-            .filter(TaskStatusOverride.task_id == task_id)
-            .first()
+        self._upsert(
+            TaskStatusOverride,
+            {"task_id": task_id},
+            {"status": new_status, "updated_by": user.id},
         )
-        if row is None:
-            self.db.add(
-                TaskStatusOverride(
-                    task_id=task_id, status=new_status, updated_by=user.id
-                )
-            )
-        else:
-            row.status = new_status
-            row.updated_by = user.id
-        self.db.commit()
 
         ref = date.today()
         red, yellow = self._thresholds()
@@ -224,21 +215,11 @@ class TasksService:
             raise HTTPException(
                 status_code=403, detail="Not allowed to change this obligation"
             )
-        row = (
-            self.db.query(ObligationTaskState)
-            .filter(ObligationTaskState.bc_obligation_id == instance_id)
-            .first()
+        self._upsert(
+            ObligationTaskState,
+            {"bc_obligation_id": instance_id},
+            {"status": new_status, "updated_by": user.id},
         )
-        if row is None:
-            self.db.add(
-                ObligationTaskState(
-                    bc_obligation_id=instance_id, status=new_status, updated_by=user.id
-                )
-            )
-        else:
-            row.status = new_status
-            row.updated_by = user.id
-        self.db.commit()
 
         # Build the card from the instance already in hand — no second obligations
         # read (avoids re-fetching the whole obligations list just to shape one card).
@@ -249,50 +230,101 @@ class TasksService:
     ) -> None:
         """Persist the shared vertical order of a column's cards (position=index).
 
-        All-or-nothing: caller must be able to move every card (union); 404 if unknown.
+        All-or-nothing: caller must be able to move every card (union). 404 if a card
+        is unknown, 422 if the cards span more than one column.
         """
+        if not ordered:
+            return
+        # Resolve the BC data and lookups once (not per card).
         tasks_by_id = {t.id: t for t in self.bc_client.get_user_tasks()}
-        obligations_by_id = {
-            o.id: o for o in self.bc_client.get_project_obligations()
-        }
+        obligations_by_id = {o.id: o for o in self.bc_client.get_project_obligations()}
+        projects_by_id = {p.id: p for p in self.bc_client.get_projects()}
+        by_key = self._users_by_key()
+        overrides = self._status_overrides([i.id for i in ordered if i.source == "task"])
+        states = self._obligation_states(
+            [i.id for i in ordered if i.source == "obligation"]
+        )
+
+        columns_seen: set[TaskStatus] = set()
         for item in ordered:
             if item.source == "obligation":
                 instance = obligations_by_id.get(item.id)
                 project_id = instance.project_id if instance is not None else None
+                column = states.get(item.id) or (
+                    TaskStatus.done
+                    if instance is not None and instance.submission_date is not None
+                    else TaskStatus.pending
+                )
             else:
                 task = tasks_by_id.get(item.id)
                 project_id = task.project_id if task is not None else None
+                column = overrides.get(item.id, task.status) if task is not None else None
             if project_id is None:
-                raise HTTPException(
-                    status_code=404, detail=f"Card {item.id} not found"
-                )
-            if not self._may_move(project_id, user, scope):
+                raise HTTPException(status_code=404, detail=f"Card {item.id} not found")
+            project = projects_by_id.get(project_id)
+            if project is None or not may_see_project(
+                project, user.email or "", scope, by_key
+            ):
                 raise HTTPException(
                     status_code=403, detail="Not allowed to reorder this card"
                 )
+            columns_seen.add(column)
 
-        for index, item in enumerate(ordered):
-            row = (
-                self.db.query(BoardCardPosition)
-                .filter(
-                    BoardCardPosition.source == item.source,
-                    BoardCardPosition.card_id == item.id,
-                )
-                .first()
+        if len(columns_seen) > 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Reorder payload mixes cards from different columns",
             )
-            if row is None:
-                self.db.add(
-                    BoardCardPosition(
-                        card_id=item.id,
-                        source=item.source,
-                        position=index,
-                        updated_by=user.id,
-                    )
+
+        self._apply_positions(ordered, user.id)
+
+    def _apply_positions(self, ordered: list[BoardOrderItem], user_id: int) -> None:
+        """Upsert position=index for each card in one pass; retry once on a race."""
+        for attempt in (1, 2):
+            existing = {
+                (r.source, r.card_id): r
+                for r in self.db.query(BoardCardPosition).filter(
+                    BoardCardPosition.card_id.in_([i.id for i in ordered])
                 )
+            }
+            for index, item in enumerate(ordered):
+                row = existing.get((item.source, item.id))
+                if row is None:
+                    self.db.add(
+                        BoardCardPosition(
+                            card_id=item.id,
+                            source=item.source,
+                            position=index,
+                            updated_by=user_id,
+                        )
+                    )
+                else:
+                    row.position = index
+                    row.updated_by = user_id
+            try:
+                self.db.commit()
+                return
+            except IntegrityError:
+                self.db.rollback()
+                if attempt == 2:
+                    raise
+
+    def _upsert(self, model, where: dict, values: dict) -> None:
+        """Insert or update one row (by ``where``); retry once on a concurrent insert."""
+        for attempt in (1, 2):
+            row = self.db.query(model).filter_by(**where).first()
+            if row is None:
+                self.db.add(model(**where, **values))
             else:
-                row.position = index
-                row.updated_by = user.id
-        self.db.commit()
+                for key, value in values.items():
+                    setattr(row, key, value)
+            try:
+                self.db.commit()
+                return
+            except IntegrityError:
+                self.db.rollback()
+                if attempt == 2:
+                    raise
 
     def add_note(self, task_id: str, author: User, body: str) -> TaskNoteResponse:
         """Add an internal note to a task (404 if the BC task is unknown)."""

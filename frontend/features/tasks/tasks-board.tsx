@@ -209,6 +209,7 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
       toast.error(message)
     }
 
+    let columnCommitted = false
     if (columnChanged) {
       const res = await tasksApi.updateStatus(activeIdStr, destColumn, moved.source)
       if (!res.success) {
@@ -219,11 +220,18 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
         )
         return
       }
+      columnCommitted = true
     }
 
     const ordered = await tasksApi.reorder(orderPayload)
     if (!ordered.success) {
-      fail("No se pudo guardar el orden. Inténtalo de nuevo.")
+      // The column move (if any) is already saved; don't roll it back, only report
+      // that the order didn't save — otherwise the UI would diverge from the backend.
+      if (columnCommitted) {
+        toast.error("Se movió la columna, pero no se pudo guardar el orden.")
+      } else {
+        fail("No se pudo guardar el orden. Inténtalo de nuevo.")
+      }
     }
   }
 

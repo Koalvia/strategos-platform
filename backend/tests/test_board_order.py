@@ -8,16 +8,9 @@ mock BC fixtures via the real scope resolver:
 * jordi@strategos.ad -> cust-001/cust-002; not proj-007 -> cannot reorder pobl-002.
 """
 
-from typing import Generator
-
 import pytest
-from fastapi.testclient import TestClient
 
-from app.db.session import get_db
-from app.domains.auth.models import User
-from app.domains.auth.utils import get_verified_user
 from app.domains.tasks.models import BoardCardPosition
-from app.main import app
 
 BOARD_URL = "/api/v1/tasks/board"
 ORDER_URL = "/api/v1/tasks/board/order"
@@ -25,36 +18,6 @@ ORDER_URL = "/api/v1/tasks/board/order"
 MANAGER_EMAIL = "marc@strategos.ad"
 SCOPED_EMAIL = "jordi@strategos.ad"
 OUT_OF_SCOPE_OBLIGATION = "pobl-002"  # proj-007 -> cust-005 (not jordi's)
-
-
-@pytest.fixture
-def client_as(db_session) -> Generator:
-    """TestClient authenticated as a given email, using the real scope resolver."""
-    app.dependency_overrides.clear()
-
-    def override_get_db():
-        yield db_session
-
-    def make(email: str) -> TestClient:
-        user = db_session.query(User).filter(User.email.ilike(email)).one_or_none()
-        if user is None:
-            user = User(
-                name=email.split("@")[0],
-                email=email,
-                hashed_password="not-a-real-hash",
-                is_verified=True,
-            )
-            db_session.add(user)
-        user.is_verified = True
-        db_session.commit()
-        db_session.refresh(user)
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_verified_user] = lambda: user
-        return TestClient(app)
-
-    yield make
-    app.dependency_overrides.clear()
 
 
 def _column(board, status):
@@ -129,3 +92,15 @@ def test_unknown_card_is_404(client_as):
             ORDER_URL, json={"ordered": [{"id": "task-nope", "source": "task"}]}
         )
     assert res.status_code == 404
+
+
+@pytest.mark.integration
+def test_reorder_rejects_cards_from_different_columns(client_as):
+    """A payload mixing two columns is rejected (422), never silently interleaved."""
+    with client_as(MANAGER_EMAIL) as client:
+        board = client.get(BOARD_URL).json()
+        pending = _column(board, "Pendiente")
+        done = _column(board, "Hecho")
+        assert pending and done
+        res = client.put(ORDER_URL, json={"ordered": [pending[0], done[0]]})
+    assert res.status_code == 422

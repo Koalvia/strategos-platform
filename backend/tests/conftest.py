@@ -104,6 +104,40 @@ def client(db_session, test_user) -> Generator[TestClient, None, None]:
 
 
 @pytest.fixture
+def client_as(db_session) -> Generator:
+    """TestClient authenticated as a given email, using the real scope resolver.
+
+    Unlike ``client``, it does NOT pin the customer scope, so ``resolve_customer_scope``
+    runs against the mock BC resources — for scope/union tests.
+    """
+    app.dependency_overrides.clear()
+
+    def override_get_db():
+        yield db_session
+
+    def make(email: str) -> TestClient:
+        user = db_session.query(User).filter(User.email.ilike(email)).one_or_none()
+        if user is None:
+            user = User(
+                name=email.split("@")[0],
+                email=email,
+                hashed_password="not-a-real-hash",
+                is_verified=True,
+            )
+            db_session.add(user)
+        user.is_verified = True
+        db_session.commit()
+        db_session.refresh(user)
+
+        app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_verified_user] = lambda: user
+        return TestClient(app)
+
+    yield make
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
 def bopa_bulletin_factory(db_session):
     """Factory to create BopaBulletin instances for testing."""
     from datetime import datetime

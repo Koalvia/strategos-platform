@@ -13,18 +13,11 @@ from the mock BC fixtures:
 * pobl-007 -> proj-001, not filed -> initial Pendiente.
 """
 
-from typing import Generator
-
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
-from app.db.session import get_db
-from app.domains.auth.models import User
-from app.domains.auth.utils import get_verified_user
 from app.domains.tasks.models import ObligationTaskState
 from app.integrations.business_central.models import TaskStatus
-from app.main import app
 
 TASKS_URL = "/api/v1/tasks"
 BOARD_URL = "/api/v1/tasks/board"
@@ -36,36 +29,6 @@ OBLIGATION_IN_SCOPE = "pobl-004"  # proj-003 -> cust-002 (jordi)
 OBLIGATION_OUT_OF_SCOPE = "pobl-002"  # proj-007 -> cust-005
 SUBMITTED_OBLIGATION = "pobl-001"  # filed -> initial Hecho
 UNSUBMITTED_OBLIGATION = "pobl-007"  # proj-001, not filed -> initial Pendiente
-
-
-@pytest.fixture
-def client_as(db_session) -> Generator:
-    """TestClient authenticated as a given email, using the real scope resolver."""
-    app.dependency_overrides.clear()
-
-    def override_get_db():
-        yield db_session
-
-    def make(email: str) -> TestClient:
-        user = db_session.query(User).filter(User.email.ilike(email)).one_or_none()
-        if user is None:
-            user = User(
-                name=email.split("@")[0],
-                email=email,
-                hashed_password="not-a-real-hash",
-                is_verified=True,
-            )
-            db_session.add(user)
-        user.is_verified = True
-        db_session.commit()
-        db_session.refresh(user)
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_verified_user] = lambda: user
-        return TestClient(app)
-
-    yield make
-    app.dependency_overrides.clear()
 
 
 def _move(client, obligation_id, status):

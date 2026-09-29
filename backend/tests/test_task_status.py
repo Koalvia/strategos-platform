@@ -11,18 +11,11 @@ responsible. Actors from the mock BC fixtures via the real scope resolver:
   proj-003/004/007/012 only, so she cannot move a task of proj-001.
 """
 
-from typing import Generator
-
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
-from app.db.session import get_db
-from app.domains.auth.models import User
-from app.domains.auth.utils import get_verified_user
 from app.domains.tasks.models import TaskStatusOverride
 from app.integrations.business_central.models import TaskStatus
-from app.main import app
 
 TASKS_URL = "/api/v1/tasks"
 
@@ -34,36 +27,6 @@ IN_SCOPE_TASK = "task-001"  # proj-001 -> cust-001 -> jordi's scope
 OUT_OF_SCOPE_TASK = "task-003"  # proj-007 -> not jordi's
 
 WAITING = "Esperando información / respuesta del cliente"
-
-
-@pytest.fixture
-def client_as(db_session) -> Generator:
-    """TestClient authenticated as a given email, using the real scope resolver."""
-    app.dependency_overrides.clear()
-
-    def override_get_db():
-        yield db_session
-
-    def make(email: str) -> TestClient:
-        user = db_session.query(User).filter(User.email.ilike(email)).one_or_none()
-        if user is None:
-            user = User(
-                name=email.split("@")[0],
-                email=email,
-                hashed_password="not-a-real-hash",
-                is_verified=True,
-            )
-            db_session.add(user)
-        user.is_verified = True
-        db_session.commit()
-        db_session.refresh(user)
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_verified_user] = lambda: user
-        return TestClient(app)
-
-    yield make
-    app.dependency_overrides.clear()
 
 
 @pytest.mark.integration
