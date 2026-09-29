@@ -1,14 +1,18 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
   closestCorners,
+  getFirstCollision,
+  pointerWithin,
+  rectIntersection,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -133,6 +137,31 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
     )
   }
 
+  // Pointer-first collision so empty/short columns are droppable; when the pointer
+  // lands on a column that has cards, retarget to the closest card so sorting works.
+  const collisionDetection: CollisionDetection = useCallback(
+    (args) => {
+      const hits = pointerWithin(args)
+      const base = hits.length > 0 ? hits : rectIntersection(args)
+      const overId = getFirstCollision(base, "id")
+      if (overId == null) return base
+      if (TASK_STATUS_ORDER.includes(overId as TaskStatus)) {
+        const cardIds = columns[overId as TaskStatus].map((t) => t.id)
+        if (cardIds.length > 0) {
+          const closest = closestCorners({
+            ...args,
+            droppableContainers: args.droppableContainers.filter(
+              (c) => c.id !== overId && cardIds.includes(String(c.id)),
+            ),
+          })
+          if (closest.length > 0) return closest
+        }
+      }
+      return [{ id: overId }]
+    },
+    [columns],
+  )
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id))
     setBeforeDrag(columns)
@@ -246,7 +275,7 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
