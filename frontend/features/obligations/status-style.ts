@@ -21,3 +21,12 @@ export const STATUS_DOT: Record<ObligationStatus, string> = {
   "Al día": "bg-green-500",
   "Sin fecha": "bg-orange-500",
 }
+
+// Board card label per traffic-light status (the wording the firm uses).
+export const TRAFFIC_LIGHT_LABEL: Record<ObligationStatus, string> = {
+  Vencido: "Vencido",
+  Urgente: "Urgente",
+  Próximo: "Vencimiento próximo",
+  "Al día": "Tiempo suficiente",
+  "Sin fecha": "Sin fecha de vencimiento",
+}

@@ -32,7 +32,7 @@ def bc():
 @pytest.mark.unit
 def test_manager_sees_every_customer(bc):
     """A resource with manageAllCustomers is unrestricted."""
-    scope = resolve_customer_scope(_user("marc@estrategos.ad"), bc)
+    scope = resolve_customer_scope(_user("marc@strategos.ad"), bc)
     assert scope.customer_ids is None
     assert scope.sees_everything
     assert scope.reason == "manager"
@@ -41,7 +41,7 @@ def test_manager_sees_every_customer(bc):
 @pytest.mark.unit
 def test_assigned_user_sees_only_their_customers(bc):
     """A non-manager resource is limited to its customersResources rows."""
-    scope = resolve_customer_scope(_user("jordi@estrategos.ad"), bc)
+    scope = resolve_customer_scope(_user("jordi@strategos.ad"), bc)
     assert scope.customer_ids == ("cust-001", "cust-002")
     assert not scope.sees_everything
     assert scope.reason == "assignments"
@@ -50,14 +50,14 @@ def test_assigned_user_sees_only_their_customers(bc):
 @pytest.mark.unit
 def test_email_match_is_case_insensitive(bc):
     """Logging in with a differently-cased email resolves to the same resource."""
-    scope = resolve_customer_scope(_user("JORDI@ESTRATEGOS.AD"), bc)
+    scope = resolve_customer_scope(_user("JORDI@STRATEGOS.AD"), bc)
     assert scope.customer_ids == ("cust-001", "cust-002")
 
 
 @pytest.mark.unit
 def test_resource_without_assignments_sees_nothing(bc):
     """Resolving with zero assignments is an empty scope, not an unrestricted one."""
-    scope = resolve_customer_scope(_user("anna@estrategos.ad"), bc)
+    scope = resolve_customer_scope(_user("anna@strategos.ad"), bc)
     assert scope.customer_ids == ()
     assert not scope.sees_everything
     assert scope.reason == "assignments"
@@ -134,7 +134,7 @@ def test_no_assignments_restricts_the_scope_to_empty():
         def get_customer_resources(self):
             return []
 
-    scope = resolve_customer_scope(_user("jordi@estrategos.ad"), _NoAssignmentsBC())
+    scope = resolve_customer_scope(_user("jordi@strategos.ad"), _NoAssignmentsBC())
     assert scope.customer_ids == ()
     assert not scope.sees_everything
 
@@ -152,4 +152,4 @@ def test_bc_outage_propagates_unavailable():
             raise BusinessCentralUnavailable("resources read failed")
 
     with pytest.raises(BusinessCentralUnavailable):
-        resolve_customer_scope(_user("marc@estrategos.ad"), _OutageBC())
+        resolve_customer_scope(_user("marc@strategos.ad"), _OutageBC())

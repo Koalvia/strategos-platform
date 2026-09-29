@@ -1,20 +1,29 @@
 """SQLAlchemy models for the tasks (Tareas) domain.
 
 The Tareas domain is a deliberate **hybrid**: the tasks themselves live in
-Business Central (title / project / assignee / due date / priority / status are
-read from ``BCUserTask`` DTOs and are **not** stored here), while this one small
-local table holds the only piece of task data BC does not cover — internal notes
-staff leave on a task. Keeping notes local avoids writing back to BC (which is
-the system of record for the tasks) while still giving the platform a native
-collaboration surface.
+Business Central (title / project / assignee / due date / priority are read from
+``BCUserTask`` DTOs and are **not** stored here). The one locally-owned piece is
+the internal notes staff leave on a task.
 
-Notes reference their BC task by its opaque string id (``task_id``); there is no
-foreign key into BC because BC tasks are not rows in this database.
+The board's workflow column is **not** persisted yet: BC cannot represent the
+"Esperando información" state and its ``userTasks`` are not writable/readable
+live, so moving a card is a client-only, non-persisted interaction until BC can
+be the store. See the Tareas board docs in the service module.
+
+``task_notes`` references its BC task by the opaque string id (``task_id``); there
+is no foreign key into BC because BC tasks are not rows in this database.
 """
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 
 from app.db.base import Base
 

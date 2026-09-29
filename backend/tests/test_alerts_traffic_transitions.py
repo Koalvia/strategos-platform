@@ -43,8 +43,8 @@ OVERDUE_DUE = date(2026, 7, 19)  # ref - 1  -> Vencido
 
 # proj-001 belongs to cust-001, whose alerts reach the manager and jordi@.
 CUST1_PROJECT = "proj-001"
-MANAGER = "marc@estrategos.ad"
-ASSIGNED = "jordi@estrategos.ad"  # cust-001, cust-002
+MANAGER = "marc@strategos.ad"
+ASSIGNED = "jordi@strategos.ad"  # cust-001, cust-002
 
 
 def _inst(instance_id: str, due_date, project_id: str = "proj-x") -> BCProjectObligation:

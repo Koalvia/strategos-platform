@@ -1,7 +1,7 @@
 """End-to-end tests for the customer/project scoping (the ticket's acceptance criteria).
 
-Two callers, driven by the mock fixtures: Marc (``marc@estrategos.ad``, RES-01, the
-manager) and Jordi (``jordi@estrategos.ad``, RES-02, assigned cust-001 and cust-002).
+Two callers, driven by the mock fixtures: Marc (``marc@strategos.ad``, RES-01, the
+manager) and Jordi (``jordi@strategos.ad``, RES-02, assigned cust-001 and cust-002).
 
 Fixture shape the assertions lean on: 15 customers, 19 projects, and cust-001/cust-002
 own 4 of them (2 each).
@@ -22,12 +22,21 @@ from app.main import app
 CUSTOMERS_URL = "/api/v1/customers"
 PROJECTS_URL = "/api/v1/projects"
 
-MANAGER_EMAIL = "marc@estrategos.ad"
-SCOPED_EMAIL = "jordi@estrategos.ad"
-UNASSIGNED_EMAIL = "anna@estrategos.ad"
+MANAGER_EMAIL = "marc@strategos.ad"
+SCOPED_EMAIL = "jordi@strategos.ad"
+UNASSIGNED_EMAIL = "anna@strategos.ad"  # no customers, but responsible of some projects
+# pol has no BC resource and is neither technician nor responsible of any project,
+# so the union leaves him with nothing to see.
+NOBODY_EMAIL = "pol@strategos.ad"
 
 SCOPED_CUSTOMERS = {"cust-001", "cust-002"}
 SCOPED_PROJECTS = {"proj-001", "proj-002", "proj-003", "proj-004"}
+# Jordi is also the technician of these (BC projectManager "Jordi Vila"), so project
+# visibility is the union of his client projects and his technician projects.
+JORDI_TECHNICIAN_PROJECTS = {
+    "proj-001", "proj-003", "proj-006", "proj-008", "proj-010", "proj-012", "proj-019",
+}
+UNION_PROJECTS = SCOPED_PROJECTS | JORDI_TECHNICIAN_PROJECTS
 
 
 @pytest.fixture
@@ -105,6 +114,9 @@ def test_empty_page_says_whether_it_is_a_missing_assignment(client_as):
     """
     with client_as(UNASSIGNED_EMAIL) as client:
         unassigned = client.get(CUSTOMERS_URL, params={"page_size": 100}).json()
+    with client_as(NOBODY_EMAIL) as client:
+        # Projects "no assignments" needs a user with neither clients nor owner
+        # projects; anna is responsible of some, so she would see those.
         unassigned_projects = client.get(PROJECTS_URL, params={"page_size": 100}).json()
     with client_as(SCOPED_EMAIL) as client:
         no_match = client.get(
@@ -181,20 +193,21 @@ def test_manager_sees_every_project(client_as):
 
 
 @pytest.mark.integration
-def test_scoped_user_sees_only_their_customers_projects(client_as):
-    """Projects follow the customer scope — "solo sus propios proyectos"."""
+def test_scoped_user_sees_client_and_technician_projects(client_as):
+    """Projects follow the union: the caller's clients plus their technician projects."""
     with client_as(SCOPED_EMAIL) as client:
         resp = client.get(PROJECTS_URL, params={"page_size": 100})
 
     assert resp.status_code == 200
     items = resp.json()["items"]
-    assert {p["id"] for p in items} == SCOPED_PROJECTS
-    assert {p["customer"]["id"] for p in items} == SCOPED_CUSTOMERS
+    assert {p["id"] for p in items} == UNION_PROJECTS
+    # Includes a technician-only project whose client is NOT Jordi's (proj-006/cust-004).
+    assert "proj-006" in {p["id"] for p in items}
 
 
 @pytest.mark.integration
-def test_user_without_assignments_sees_no_projects(client_as):
-    with client_as(UNASSIGNED_EMAIL) as client:
+def test_user_without_any_link_sees_no_projects(client_as):
+    with client_as(NOBODY_EMAIL) as client:
         resp = client.get(PROJECTS_URL, params={"page_size": 100})
 
     assert resp.status_code == 200
@@ -202,8 +215,22 @@ def test_user_without_assignments_sees_no_projects(client_as):
 
 
 @pytest.mark.integration
-def test_scoped_user_cannot_open_another_customers_project(client_as):
-    """proj-007 belongs to cust-005, outside Jordi's scope."""
+def test_technician_can_open_project_outside_client_scope(client_as):
+    """Jordi is the technician of proj-006 (cust-004, not his client) → can open it."""
+    with client_as(SCOPED_EMAIL) as client:
+        assert client.get(f"{PROJECTS_URL}/proj-006").status_code == 200
+
+
+@pytest.mark.integration
+def test_responsible_can_open_project_outside_client_scope(client_as):
+    """Anna is responsible of proj-003 (cust-002, not her client) → can open it."""
+    with client_as(UNASSIGNED_EMAIL) as client:
+        assert client.get(f"{PROJECTS_URL}/proj-003").status_code == 200
+
+
+@pytest.mark.integration
+def test_scoped_user_cannot_open_unrelated_project(client_as):
+    """proj-007 (cust-005) — not Jordi's client, technician or responsible → 404."""
     with client_as(SCOPED_EMAIL) as client:
         allowed = client.get(f"{PROJECTS_URL}/proj-001")
         forbidden = client.get(f"{PROJECTS_URL}/proj-007")

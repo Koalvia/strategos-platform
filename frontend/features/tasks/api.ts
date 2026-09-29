@@ -1,5 +1,5 @@
 // Tasks feature API client (client-side).
-// Calls the Next.js route handler under /api/tasks — never the backend directly.
+// Calls the Next.js route handlers under /api/tasks — never the backend directly.
 import type { Task, TaskStatus } from "@/lib/types"
 
 export interface GetTasksParams {
@@ -19,6 +19,15 @@ export const tasksApi = {
     const queryString = query.toString()
 
     const response = await fetch(`/api/tasks${queryString ? `?${queryString}` : ""}`)
+    return response.json()
+  },
+
+  // The Tareas board: BC tasks + obligations shown as tasks.
+  async getBoard(
+    status?: TaskStatus,
+  ): Promise<{ success: boolean; data?: Task[]; message?: string }> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : ""
+    const response = await fetch(`/api/tasks/board${query}`)
     return response.json()
   },
 }

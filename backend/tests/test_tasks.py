@@ -29,11 +29,11 @@ def bc_user_client(db_session):
     """An authenticated client whose user maps to BC assignee ``usr-anna``.
 
     ``list_my_tasks`` resolves the BC assignee by email, so the seeded user's
-    email must match a BC user (``anna@estrategos.ad``).
+    email must match a BC user (``anna@strategos.ad``).
     """
     user = User(
         name="Anna Ferrer",
-        email="anna@estrategos.ad",
+        email="anna@strategos.ad",
         hashed_password="not-a-real-hash",
         is_verified=True,
     )
@@ -74,11 +74,16 @@ def test_task_field_mapping(client):
         "id",
         "title",
         "project",
+        "client",
         "assignee",
         "priority",
         "status",
+        "traffic_light",
         "due_date",
+        "source",
     }
+    assert row["source"] == "task"
+    assert row["client"] is None
     assert row["title"] == "Revisar model IS abans de presentar"
     assert row["project"] == {"id": "proj-001", "name": "Assessorament fiscal i comptable"}
     assert row["assignee"] == {"id": "usr-marc", "name": "Marc Solé"}

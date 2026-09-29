@@ -12,26 +12,41 @@ export interface User {
   createdAt: string
 }
 
-// Task priority / status match the Business Central vocabulary the backend
-// returns. Status names are the board columns rendered on the Tareas page.
+// Task priority matches the Business Central vocabulary the backend returns.
+// Status values are the board columns rendered on the Tareas page: the first
+// three come from BC, while "Esperando información / respuesta del cliente" is
+// platform-only (never emitted by BC). Moving a card is client-only and not
+// persisted yet, so a card resets to its BC/derived column on reload.
 export type TaskPriority = "Alta" | "Media" | "Baja"
-export type TaskStatus = "Pendiente" | "En curso" | "Hecho"
+export type TaskStatus =
+  | "Pendiente"
+  | "En curso"
+  | "Esperando información / respuesta del cliente"
+  | "Hecho"
 
 interface TaskEntityRef {
   id: string
   name: string
 }
 
-// Backend API response type (from GET /api/v1/tasks). Tasks are sourced
-// read-only from Business Central, so there are no local mutable columns.
+// A board card's source: a BC user task, or an obligation shown as a task.
+export type TaskSource = "task" | "obligation"
+
+// Backend API response (GET /api/v1/tasks and /tasks/board). `status` is the
+// workflow column; `traffic_light` is the colour derived from the due date;
+// `source` says whether it is a BC task or an obligation. Obligations carry a
+// `client` and have no `assignee`/`priority`.
 export interface TaskResponse {
   id: string
   title: string
   project: TaskEntityRef
-  assignee: TaskEntityRef
-  priority: TaskPriority
+  client: TaskEntityRef | null
+  assignee: TaskEntityRef | null
+  priority: TaskPriority | null
   status: TaskStatus
-  due_date: string
+  traffic_light: ObligationStatus | null
+  due_date: string | null
+  source: TaskSource
 }
 
 // Frontend type (camelCase for easier use in components)
@@ -39,10 +54,13 @@ export interface Task {
   id: string
   title: string
   project: TaskEntityRef
-  assignee: TaskEntityRef
-  priority: TaskPriority
+  client: TaskEntityRef | null
+  assignee: TaskEntityRef | null
+  priority: TaskPriority | null
   status: TaskStatus
-  dueDate: string
+  trafficLight: ObligationStatus | null
+  dueDate: string | null
+  source: TaskSource
 }
 
 // Customer status matches the Business Central vocabulary the backend returns.
@@ -368,10 +386,13 @@ export function transformTaskResponse(backendTask: TaskResponse): Task {
     id: backendTask.id,
     title: backendTask.title,
     project: backendTask.project,
+    client: backendTask.client,
     assignee: backendTask.assignee,
     priority: backendTask.priority,
     status: backendTask.status,
+    trafficLight: backendTask.traffic_light,
     dueDate: backendTask.due_date,
+    source: backendTask.source,
   }
 }
 

@@ -33,12 +33,12 @@ USERS_URL = "/api/v1/users"
 
 # active_tasks computed from the mock BC fixtures (non-"Hecho" tasks per assignee).
 EXPECTED_ACTIVE = {
-    "marc@estrategos.ad": 2,
-    "anna@estrategos.ad": 3,
-    "laura@estrategos.ad": 4,
-    "jordi@estrategos.ad": 3,
-    "nuria@estrategos.ad": 2,
-    "pol@estrategos.ad": 1,
+    "marc@strategos.ad": 2,
+    "anna@strategos.ad": 3,
+    "laura@strategos.ad": 4,
+    "jordi@strategos.ad": 3,
+    "nuria@strategos.ad": 2,
+    "pol@strategos.ad": 1,
 }
 
 
@@ -47,7 +47,7 @@ def seeded_client(db_session):
     """A client whose database holds the seeded staff users."""
     seed_staff_users(db_session)
     # Authenticate as one of the seeded staff (any verified user is fine).
-    current = db_session.query(User).filter(User.email == "marc@estrategos.ad").one()
+    current = db_session.query(User).filter(User.email == "marc@strategos.ad").one()
     current.is_verified = True
     db_session.commit()
 
@@ -94,14 +94,14 @@ def test_seed_is_idempotent(db_session):
     """Re-seeding does not duplicate users and refreshes name/role in place."""
     seed_staff_users(db_session)
     # Corrupt a role to prove the second run repairs it.
-    laura = db_session.query(User).filter(User.email == "laura@estrategos.ad").one()
+    laura = db_session.query(User).filter(User.email == "laura@strategos.ad").one()
     laura.role = "Wrong Role"
     db_session.commit()
 
     seed_staff_users(db_session)
 
     assert db_session.query(User).count() == 6
-    laura = db_session.query(User).filter(User.email == "laura@estrategos.ad").one()
+    laura = db_session.query(User).filter(User.email == "laura@strategos.ad").one()
     assert laura.role == "Responsable Laboral"
 
 
@@ -140,8 +140,8 @@ def test_directory_returns_fields_and_counts(seeded_client):
     assert set(body[0].keys()) == {"name", "role", "email", "active_tasks"}
 
     by_email = {row["email"]: row for row in body}
-    assert by_email["laura@estrategos.ad"]["role"] == "Responsable Laboral"
-    assert by_email["pol@estrategos.ad"]["role"] == "Administració"
+    assert by_email["laura@strategos.ad"]["role"] == "Responsable Laboral"
+    assert by_email["pol@strategos.ad"]["role"] == "Administració"
 
     for email, expected in EXPECTED_ACTIVE.items():
         assert by_email[email]["active_tasks"] == expected
@@ -220,7 +220,7 @@ def client_factory(db_session):
 @pytest.mark.integration
 def test_directory_full_with_manage_all_customers(client_factory):
     """Marc's resource has the flag, so he sees the whole directory."""
-    with client_factory("marc@estrategos.ad") as client:
+    with client_factory("marc@strategos.ad") as client:
         body = client.get(USERS_URL).json()
 
     assert [row["email"] for row in body] == [email for _, _, email in STAFF]
@@ -229,13 +229,13 @@ def test_directory_full_with_manage_all_customers(client_factory):
 @pytest.mark.integration
 def test_directory_scoped_to_self_without_manage_all_customers(client_factory):
     """Anna's resource has the flag off, so she only sees her own row."""
-    with client_factory("anna@estrategos.ad") as client:
+    with client_factory("anna@strategos.ad") as client:
         body = client.get(USERS_URL).json()
 
     assert len(body) == 1
-    assert body[0]["email"] == "anna@estrategos.ad"
+    assert body[0]["email"] == "anna@strategos.ad"
     assert body[0]["role"] == "Responsable Fiscal"
-    assert body[0]["active_tasks"] == EXPECTED_ACTIVE["anna@estrategos.ad"]
+    assert body[0]["active_tasks"] == EXPECTED_ACTIVE["anna@strategos.ad"]
 
 
 @pytest.mark.integration
@@ -245,19 +245,19 @@ def test_directory_scoped_to_self_when_no_resource_resolves(client_factory):
     Restrictive by default: an account Business Central does not know gets no more
     than itself, the same as a resource without assignments.
     """
-    with client_factory("marc@estrategos.ad", _NoResourcesBCClient()) as client:
+    with client_factory("marc@strategos.ad", _NoResourcesBCClient()) as client:
         resp = client.get(USERS_URL)
 
     assert resp.status_code == 200
     body = resp.json()
     assert len(body) == 1
-    assert body[0]["email"] == "marc@estrategos.ad"
+    assert body[0]["email"] == "marc@strategos.ad"
 
 
 @pytest.mark.integration
 def test_directory_response_shape_is_unchanged_when_scoped(client_factory):
     """Scoping changes which rows come back, never their fields."""
-    with client_factory("anna@estrategos.ad") as client:
+    with client_factory("anna@strategos.ad") as client:
         body = client.get(USERS_URL).json()
 
     assert set(body[0].keys()) == {"name", "role", "email", "active_tasks"}

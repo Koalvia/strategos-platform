@@ -56,6 +56,7 @@ def list_projects(
         scope=scope,
         cursor=cursor,
         page_size=page_size,
+        user_email=current_user.email,
     )
 
 
@@ -67,6 +68,10 @@ def get_project(
     bc_client: BusinessCentralClient = Depends(get_business_central_client),
     scope: CustomerScope = Depends(get_customer_scope),
 ):
-    """Return a single project by id (404 if unknown, or outside the caller's scope)."""
+    """Return a single project by id (404 if unknown or not visible to the caller).
+
+    Visible by union: the caller's own customers, or projects where they are the
+    technician/responsible.
+    """
     service = ProjectsService(db, bc_client)
-    return service.get_project(project_id, scope=scope)
+    return service.get_project(project_id, scope=scope, user_email=current_user.email)
