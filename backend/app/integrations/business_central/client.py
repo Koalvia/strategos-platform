@@ -223,11 +223,11 @@ class BusinessCentralClient(ABC):
     def get_job_ledger_entries(
         self, *, project_ids: list[str] | None = None
     ) -> list[BCJobLedgerEntry]:
-        """Return job-ledger *usage* entries (BC ``GET /jobLedgerEntries``).
+        """Return job-ledger *resource usage* entries (BC ``GET /jobLedgerEntries``).
 
-        Scoped to ``entryType eq 'Usage'`` (the cost side of a project).
-        ``project_ids`` narrows that further to those projects' entries,
-        following the shared filter contract above.
+        Scoped to ``entryType eq 'Usage'`` and ``type eq 'Resource'`` (the labour
+        cost side of a project). ``project_ids`` narrows that further to those
+        projects' entries, following the shared filter contract above.
         """
         raise NotImplementedError
 

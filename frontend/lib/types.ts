@@ -256,13 +256,14 @@ export interface CountKpi {
   count: number
 }
 
-// Billing, usage cost and logged hours for one project.
+// Billing, usage cost, logged hours and margin for one project.
 export interface ProjectBilling {
   project_id: string
   project_name: string
   billed: number
   cost: number | null
   hours: number | null
+  margin: number | null
 }
 
 // One customer with its per-project billing nested underneath.
@@ -272,6 +273,7 @@ export interface CustomerBillingGroup {
   net_billed: number
   cost: number | null
   hours: number | null
+  margin: number | null
   projects: ProjectBilling[]
 }
 

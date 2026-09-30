@@ -868,34 +868,31 @@ class LiveBusinessCentralClient(BusinessCentralClient):
     def get_job_ledger_entries(
         self, *, project_ids: list[str] | None = None
     ) -> list[BCJobLedgerEntry]:
-        """Return job-ledger *usage* entries from BC's ``jobLedgerEntries`` entity.
+        """Return job-ledger *resource usage* entries from ``jobLedgerEntries``.
 
-        Scoped server-side to ``entryType eq 'Usage'`` (the cost side of a
-        project) so only cost rows come back.
+        Scoped server-side to ``entryType eq 'Usage' and type eq 'Resource'`` (the
+        labour cost side of a project) so only resource cost rows come back.
 
         ``project_ids`` narrows it further to those projects' entries, ``and``-ed
-        onto the usage filter rather than replacing it.
+        onto that filter rather than replacing it.
 
-        BC Option values are case-sensitive and the ``'Usage'`` literal is not
-        yet verified against the live tenant. If the tenant spells it differently
-        (e.g. ``usage``/``USAGE``) the filter matches nothing, project costs
+        BC Option values are case-sensitive. If the tenant spells ``'Usage'`` or
+        ``'Resource'`` differently the filter matches nothing, project costs
         silently read as zero, and no error is raised — so an empty result is
-        logged as a warning to make that case noticeable in production. Only the
-        unscoped read warns: a specific set of projects legitimately having no
-        usage cost is ordinary, and warning on it would bury the real signal.
+        logged as a warning. Only the unscoped read warns: a specific set of
+        projects legitimately having no resource cost is ordinary.
         """
         rows = self._rows_scoped_by_ids(
             "jobLedgerEntries",
             "jobNo",
             project_ids,
-            extra_filter="entryType eq 'Usage'",
+            extra_filter="entryType eq 'Usage' and type eq 'Resource'",
         )
         if not rows and project_ids is None:
             logger.warning(
-                "jobLedgerEntries returned no rows for filter "
-                "\"entryType eq 'Usage'\"; project costs will be zero. BC Option "
-                "values are case-sensitive — if the live tenant spells the value "
-                "differently, verify the filter literal."
+                "jobLedgerEntries returned no rows for filter \"entryType eq "
+                "'Usage' and type eq 'Resource'\"; project costs will be zero. BC "
+                "Option values are case-sensitive — verify the filter literals."
             )
         return [
             BCJobLedgerEntry(

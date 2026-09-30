@@ -66,8 +66,8 @@ _SALES_INVOICE_HEADERS = _load("sales_invoice_headers.json", BCSalesInvoiceHeade
 _SALES_INVOICE_LINES = _load("sales_invoice_lines.json", BCSalesInvoiceLine)
 _SALES_CR_MEMO_HEADERS = _load("sales_cr_memo_headers.json", BCSalesCrMemoHeader)
 _SALES_CR_MEMO_LINES = _load("sales_cr_memo_lines.json", BCSalesCrMemoLine)
-# Fixture is pre-filtered to ``entryType == 'Usage'`` rows, mirroring the
-# server-side ``$filter`` the live client applies (see get_job_ledger_entries).
+# Fixture is pre-filtered to ``entryType == 'Usage'`` rows; get_job_ledger_entries
+# further keeps only ``type == 'Resource'``, mirroring the live server-side filter.
 _JOB_LEDGER_ENTRIES = _load("job_ledger_entries.json", BCJobLedgerEntry)
 _TIME_SHEET_POSTING_ENTRIES = _load(
     "time_sheet_posting_entries.json", BCTimeSheetPostingEntry
@@ -234,7 +234,10 @@ class MockBusinessCentralClient(BusinessCentralClient):
     def get_job_ledger_entries(
         self, *, project_ids: list[str] | None = None
     ) -> list[BCJobLedgerEntry]:
-        return _filtered(_JOB_LEDGER_ENTRIES, project_ids, lambda e: e.project_id)
+        # Only Resource usage (labour cost), mirroring the live ``type eq 'Resource'``
+        # filter; Item usage rows in the fixture are excluded.
+        resource = [e for e in _JOB_LEDGER_ENTRIES if e.line_type == "Resource"]
+        return _filtered(resource, project_ids, lambda e: e.project_id)
 
     def get_time_sheet_posting_entries(
         self, *, project_ids: list[str] | None = None

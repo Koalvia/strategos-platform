@@ -200,6 +200,7 @@ def test_billing_groups_projects_under_customers(frozen_client):
         "net_billed",
         "cost",
         "hours",
+        "margin",
         "projects",
     }
     names = [c["customer_name"] for c in facturacion]
@@ -216,8 +217,10 @@ def test_billing_groups_projects_under_customers(frozen_client):
         "billed",
         "cost",
         "hours",
+        "margin",
     }
-    # proj-002 (Gestió laboral) belongs to cust-001: billed 2000, cost 900, 16 h.
+    # proj-002 (Gestió laboral) belongs to cust-001: billed 2000, cost 900, 16 h;
+    # margin 2000 − 900 = 1100.
     proj_002 = next(
         p for p in fontaneria["projects"] if p["project_id"] == "proj-002"
     )
@@ -227,6 +230,7 @@ def test_billing_groups_projects_under_customers(frozen_client):
         "billed": 2000.0,
         "cost": 900.0,
         "hours": 16.0,
+        "margin": 1100.0,
     }
     assert fontaneria["cost"] == round(
         sum(p["cost"] for p in fontaneria["projects"]), 2

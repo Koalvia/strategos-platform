@@ -159,19 +159,21 @@ def test_billing_by_project_combines_billing_cost_and_hours():
 
     result = {r.project_id: r for r in BillingService(None, bc).billing_by_project()}
 
-    # p1: billed 2000 − 500 = 1500, cost 550, 8 hours.
+    # p1: billed 2000 − 500 = 1500, cost 550, 8 hours; margin 950 (63.3 %).
     assert (result["p1"].billed, result["p1"].cost, result["p1"].hours) == (
         1500.0,
         550.0,
         8.0,
     )
+    assert result["p1"].margin == 950.0
     assert result["p1"].project_name == "Project One"
-    # p2: no billing, cost 300, no hours.
+    # p2: no billing, cost 300, no hours; margin −300.
     assert (result["p2"].billed, result["p2"].cost, result["p2"].hours) == (
         0.0,
         300.0,
         0.0,
     )
+    assert result["p2"].margin == -300.0
 
 
 @pytest.mark.unit
@@ -400,6 +402,8 @@ def test_missing_job_ledger_nulls_cost_but_keeps_billing_and_hours():
     assert len(result) == 1
     row = result[0]
     assert row.cost is None
+    # Cost unknown -> margin cannot be computed either.
+    assert row.margin is None
     assert row.billed == 2000.0
     assert row.hours == 16.0
 
@@ -415,6 +419,8 @@ def test_missing_time_sheets_nulls_hours_but_keeps_billing_and_cost():
     assert row.hours is None
     assert row.billed == 2000.0
     assert row.cost == 400.0
+    # Cost available -> margin computed (2000 − 400 = 1600).
+    assert row.margin == 1600.0
 
 
 @pytest.mark.unit
@@ -431,6 +437,7 @@ def test_grouped_customer_rollup_propagates_unavailable_column():
     assert len(groups) == 1
     group = groups[0]
     assert group.cost is None
+    assert group.margin is None
     assert group.net_billed == 2000.0
     assert group.hours == 16.0
 
@@ -539,6 +546,7 @@ def test_by_project_endpoint_returns_billing_cost_hours(client):
         "billed": 2000.0,
         "cost": 900.0,
         "hours": 16.0,
+        "margin": 1100.0,
     }
     billed = [row["billed"] for row in body]
     assert billed == sorted(billed, reverse=True)

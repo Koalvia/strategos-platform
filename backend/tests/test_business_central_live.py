@@ -1040,7 +1040,7 @@ def test_sales_cr_memo_mapping():
 
 @pytest.mark.unit
 def test_job_ledger_entries_send_usage_filter_and_map_cost():
-    """The job-ledger read is scoped server-side to ``entryType eq 'Usage'``."""
+    """The job-ledger read is scoped to resource usage server-side."""
     client, requests = _build_billing(
         jobLedgerEntries=[
             {
@@ -1063,7 +1063,10 @@ def test_job_ledger_entries_send_usage_filter_and_map_cost():
     ledger_request = next(
         r for r in requests if r.url.path.endswith("/jobLedgerEntries")
     )
-    assert ledger_request.url.params["$filter"] == "entryType eq 'Usage'"
+    assert (
+        ledger_request.url.params["$filter"]
+        == "entryType eq 'Usage' and type eq 'Resource'"
+    )
 
     entry = entries[0]
     # BC sends entryNo as a JSON number; the DTO carries it as a string.
