@@ -34,6 +34,8 @@ class ProjectBillingResponse(BaseModel):
     ``cost``/``hours`` are ``None`` when their Business Central source could not
     be read (the entity may not be enabled on the tenant) — distinct from
     ``0.0``, which means the project genuinely has no cost / no logged hours.
+
+    ``margin`` is ``billed - cost``; ``None`` when ``cost`` is unavailable.
     """
 
     project_id: str
@@ -41,6 +43,7 @@ class ProjectBillingResponse(BaseModel):
     billed: float
     cost: float | None = None
     hours: float | None = None
+    margin: float | None = None
 
 
 class CustomerBillingGroupResponse(BaseModel):
@@ -60,6 +63,8 @@ class CustomerBillingGroupResponse(BaseModel):
 
     ``cost``/``hours`` are ``None`` when the underlying source was unavailable
     for any of the customer's projects, since a partial sum would be misleading.
+
+    ``margin`` is ``net_billed - cost``; ``None`` when ``cost`` is unavailable.
     """
 
     customer_id: str
@@ -67,4 +72,5 @@ class CustomerBillingGroupResponse(BaseModel):
     net_billed: float
     cost: float | None = None
     hours: float | None = None
+    margin: float | None = None
     projects: list[ProjectBillingResponse]

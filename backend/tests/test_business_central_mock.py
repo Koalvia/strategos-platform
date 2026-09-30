@@ -400,8 +400,9 @@ def test_billing_getters_load_and_type_fixtures(client):
     assert all(isinstance(e, BCTimeSheetPostingEntry) for e in time_sheets)
     assert all(isinstance(r, BCResource) for r in resources)
 
-    # The job-ledger fixture is pre-filtered to usage entries (the cost side).
+    # The job-ledger getter returns only Resource usage (the labour cost side).
     assert job_ledger and all(e.entry_type == "Usage" for e in job_ledger)
+    assert all(e.line_type == "Resource" for e in job_ledger)
 
     # A line ties back to its header on document_no, and a non-project line
     # (blank jobNo) is represented as project_id None.

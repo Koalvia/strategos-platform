@@ -70,6 +70,13 @@ def _rollup(
     return round(sum(v for v in values if v is not None), _MONEY_DECIMALS)
 
 
+def _margin(billed: float, cost: float | None) -> float | None:
+    """``billed − cost``; ``None`` when ``cost`` is unavailable."""
+    if cost is None:
+        return None
+    return round(billed - cost, _MONEY_DECIMALS)
+
+
 class BillingService:
     """Aggregate the firm's billing and costs from Business Central."""
 
@@ -193,24 +200,21 @@ class BillingService:
 
         project_ids = set(billed) | set(cost or {}) | set(hours or {})
         names = {p.id: p.name for p in projects}
-        results = [
-            ProjectBillingResponse(
-                project_id=project_id,
-                project_name=names.get(project_id, project_id),
-                billed=round(billed.get(project_id, 0.0), _MONEY_DECIMALS),
-                cost=(
-                    None
-                    if cost is None
-                    else round(cost.get(project_id, 0.0), _MONEY_DECIMALS)
-                ),
-                hours=(
-                    None
-                    if hours is None
-                    else round(hours.get(project_id, 0.0), _MONEY_DECIMALS)
-                ),
+        results = []
+        for project_id in project_ids:
+            b = round(billed.get(project_id, 0.0), _MONEY_DECIMALS)
+            c = None if cost is None else round(cost.get(project_id, 0.0), _MONEY_DECIMALS)
+            h = None if hours is None else round(hours.get(project_id, 0.0), _MONEY_DECIMALS)
+            results.append(
+                ProjectBillingResponse(
+                    project_id=project_id,
+                    project_name=names.get(project_id, project_id),
+                    billed=b,
+                    cost=c,
+                    hours=h,
+                    margin=_margin(b, c),
+                )
             )
-            for project_id in project_ids
-        ]
         results.sort(key=lambda r: r.billed, reverse=True)
         return results, cost is not None, hours is not None
 
@@ -320,35 +324,26 @@ class BillingService:
         if missing:
             names.update(self.bc_client.get_customer_names(missing))
 
-        groups = [
-            CustomerBillingGroupResponse(
-                customer_id=customer_id,
-                customer_name=(
-                    names.get(customer_id, customer_id)
-                    if customer_id
-                    else "Sin cliente"
-                ),
-                net_billed=round(
-                    net_by_customer.get(customer_id, 0.0), _MONEY_DECIMALS
-                ),
-                cost=(
-                    _rollup(
-                        projects_by_customer.get(customer_id, []), lambda p: p.cost
-                    )
-                    if cost_available
-                    else None
-                ),
-                hours=(
-                    _rollup(
-                        projects_by_customer.get(customer_id, []), lambda p: p.hours
-                    )
-                    if hours_available
-                    else None
-                ),
-                projects=projects_by_customer.get(customer_id, []),
+        groups = []
+        for customer_id in customer_ids:
+            rows = projects_by_customer.get(customer_id, [])
+            net = round(net_by_customer.get(customer_id, 0.0), _MONEY_DECIMALS)
+            cost = _rollup(rows, lambda p: p.cost) if cost_available else None
+            groups.append(
+                CustomerBillingGroupResponse(
+                    customer_id=customer_id,
+                    customer_name=(
+                        names.get(customer_id, customer_id)
+                        if customer_id
+                        else "Sin cliente"
+                    ),
+                    net_billed=net,
+                    cost=cost,
+                    hours=_rollup(rows, lambda p: p.hours) if hours_available else None,
+                    margin=_margin(net, cost),
+                    projects=rows,
+                )
             )
-            for customer_id in customer_ids
-        ]
         groups.sort(key=lambda g: g.net_billed, reverse=True)
         return groups
 
@@ -459,45 +454,37 @@ class BillingService:
 
         rows_by_customer: dict[str, list[ProjectBillingResponse]] = {}
         for project in projects:
+            b = round(billed_by_project.get(project.id, 0.0), _MONEY_DECIMALS)
+            c = None if cost is None else round(cost.get(project.id, 0.0), _MONEY_DECIMALS)
+            h = None if hours is None else round(hours.get(project.id, 0.0), _MONEY_DECIMALS)
             rows_by_customer.setdefault(project.customer_id, []).append(
                 ProjectBillingResponse(
                     project_id=project.id,
                     project_name=project.name,
-                    billed=round(
-                        billed_by_project.get(project.id, 0.0), _MONEY_DECIMALS
-                    ),
-                    cost=(
-                        None
-                        if cost is None
-                        else round(cost.get(project.id, 0.0), _MONEY_DECIMALS)
-                    ),
-                    hours=(
-                        None
-                        if hours is None
-                        else round(hours.get(project.id, 0.0), _MONEY_DECIMALS)
-                    ),
+                    billed=b,
+                    cost=c,
+                    hours=h,
+                    margin=_margin(b, c),
                 )
             )
         # Billing desc within each customer, matching billing_by_project's order.
         for rows in rows_by_customer.values():
             rows.sort(key=lambda row: row.billed, reverse=True)
 
-        return [
-            CustomerBillingGroupResponse(
-                customer_id=ref.id,
-                customer_name=ref.name,
-                net_billed=round(net_by_customer.get(ref.id, 0.0), _MONEY_DECIMALS),
-                cost=(
-                    _rollup(rows_by_customer.get(ref.id, []), lambda p: p.cost)
-                    if cost is not None
-                    else None
-                ),
-                hours=(
-                    _rollup(rows_by_customer.get(ref.id, []), lambda p: p.hours)
-                    if hours is not None
-                    else None
-                ),
-                projects=rows_by_customer.get(ref.id, []),
+        groups = []
+        for ref in customer_refs:
+            rows = rows_by_customer.get(ref.id, [])
+            net = round(net_by_customer.get(ref.id, 0.0), _MONEY_DECIMALS)
+            group_cost = _rollup(rows, lambda p: p.cost) if cost is not None else None
+            groups.append(
+                CustomerBillingGroupResponse(
+                    customer_id=ref.id,
+                    customer_name=ref.name,
+                    net_billed=net,
+                    cost=group_cost,
+                    hours=_rollup(rows, lambda p: p.hours) if hours is not None else None,
+                    margin=_margin(net, group_cost),
+                    projects=rows,
+                )
             )
-            for ref in customer_refs
-        ]
+        return groups

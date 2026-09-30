@@ -21,6 +21,14 @@ import { formatEuro, formatHours } from "./format"
 const HEAD_CLASS = "text-xs font-semibold uppercase tracking-wide text-slate-500"
 // Right-aligned, tabular figures so decimals line up and widths don't jump.
 const NUM_CLASS = "px-6 py-3 text-right tabular-nums"
+
+// Colour the margin by sign; slate when unavailable or exactly zero.
+function marginClass(margin: number | null): string {
+  if (margin === null || margin === undefined) return "text-slate-500"
+  if (margin > 0) return "text-emerald-600"
+  if (margin < 0) return "text-red-600"
+  return "text-slate-700"
+}
 // Placeholder rows shown on the first load, before the page size is known.
 const SKELETON_ROWS = 5
 
@@ -97,6 +105,9 @@ export function FacturacionResumen({
                 </TableCell>
                 <TableCell className={cn(NUM_CLASS, "py-4")}>
                   <Skeleton className="ml-auto h-4 w-20" />
+                </TableCell>
+                <TableCell className={cn(NUM_CLASS, "py-4")}>
+                  <Skeleton className="ml-auto h-4 w-24" />
                 </TableCell>
                 <TableCell className={cn(NUM_CLASS, "py-4")}>
                   <Skeleton className="ml-auto h-4 w-12" />
@@ -190,6 +201,9 @@ function FacturacionHead() {
           Coste
         </TableHead>
         <TableHead className={cn(HEAD_CLASS, "px-6 py-4 text-right")}>
+          Margen
+        </TableHead>
+        <TableHead className={cn(HEAD_CLASS, "px-6 py-4 text-right")}>
           Horas
         </TableHead>
       </TableRow>
@@ -249,6 +263,9 @@ function FacturacionGroup({
         <TableCell className={cn(NUM_CLASS, "py-4 text-slate-700")}>
           {formatEuro(group.cost)}
         </TableCell>
+        <TableCell className={cn(NUM_CLASS, "py-4 font-medium", marginClass(group.margin))}>
+          {formatEuro(group.margin)}
+        </TableCell>
         <TableCell className={cn(NUM_CLASS, "py-4 text-slate-500")}>
           {formatHours(group.hours)}
         </TableCell>
@@ -276,6 +293,9 @@ function FacturacionGroup({
             </TableCell>
             <TableCell className={cn(NUM_CLASS, "text-slate-700")}>
               {formatEuro(project.cost)}
+            </TableCell>
+            <TableCell className={cn(NUM_CLASS, marginClass(project.margin))}>
+              {formatEuro(project.margin)}
             </TableCell>
             <TableCell className={cn(NUM_CLASS, "text-slate-500")}>
               {formatHours(project.hours)}
