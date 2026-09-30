@@ -55,7 +55,6 @@ function SortableCard({ task }: { task: Task }) {
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : undefined,
   }
   return (
     <div
@@ -65,20 +64,39 @@ function SortableCard({ task }: { task: Task }) {
       {...attributes}
       className="cursor-grab touch-none active:cursor-grabbing"
     >
-      <TaskCard task={task} />
+      {isDragging ? (
+        // At the landing slot: a translucent preview of the card (where it will go),
+        // outlined as a placeholder while its solid copy follows the cursor.
+        <div className="rounded-xl border-2 border-dashed border-slate-300">
+          <div className="opacity-40">
+            <TaskCard task={task} />
+          </div>
+        </div>
+      ) : (
+        <TaskCard task={task} />
+      )}
     </div>
   )
 }
 
-// A droppable column hosting a vertical SortableContext of its cards.
-function Column({ status, tasks }: { status: TaskStatus; tasks: Task[] }) {
-  const { setNodeRef, isOver } = useDroppable({ id: status })
+// A droppable column hosting a vertical SortableContext of its cards. ``highlight``
+// rings the whole column while a card is dragged over it (the drag's target column).
+function Column({
+  status,
+  tasks,
+  highlight,
+}: {
+  status: TaskStatus
+  tasks: Task[]
+  highlight: boolean
+}) {
+  const { setNodeRef } = useDroppable({ id: status })
   return (
     <section
       ref={setNodeRef}
       className={cn(
         "rounded-lg bg-slate-100/60 p-4 transition-shadow",
-        isOver && "ring-2 ring-[#caa53d]",
+        highlight && "ring-2 ring-[#caa53d]",
       )}
     >
       <h2
@@ -106,6 +124,8 @@ function Column({ status, tasks }: { status: TaskStatus; tasks: Task[] }) {
 export function TasksBoard({ tasks, loading }: TasksBoardProps) {
   const [columns, setColumns] = useState<Columns>(() => groupByColumn(tasks))
   const [activeId, setActiveId] = useState<string | null>(null)
+  // The column currently under the drag, ringed as the drop target.
+  const [overColumn, setOverColumn] = useState<TaskStatus | null>(null)
   // Snapshot taken at drag start, for rollback if persisting the move fails.
   const [beforeDrag, setBeforeDrag] = useState<Columns | null>(null)
 
@@ -170,9 +190,13 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
   // Move the dragged card into the column it is hovering, so it renders there live.
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event
-    if (!over) return
+    if (!over) {
+      setOverColumn(null)
+      return
+    }
     const from = columnOf(String(active.id))
     const to = columnOf(String(over.id))
+    setOverColumn(to)
     if (!from || !to || from === to) return
 
     setColumns((prev) => {
@@ -197,6 +221,7 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
     const snapshot = beforeDrag
     setActiveId(null)
     setBeforeDrag(null)
+    setOverColumn(null)
     if (!over || !snapshot) return
 
     const activeIdStr = String(active.id)
@@ -264,6 +289,14 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
     }
   }
 
+  // Restore the pre-drag layout if the drag is cancelled (handleDragOver mutated it).
+  const handleDragCancel = () => {
+    if (beforeDrag) setColumns(beforeDrag)
+    setActiveId(null)
+    setBeforeDrag(null)
+    setOverColumn(null)
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-60 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white">
@@ -279,13 +312,25 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         {TASK_STATUS_ORDER.map((status) => (
-          <Column key={status} status={status} tasks={columns[status]} />
+          <Column
+            key={status}
+            status={status}
+            tasks={columns[status]}
+            highlight={overColumn === status}
+          />
         ))}
       </div>
-      <DragOverlay>{activeTask ? <TaskCard task={activeTask} /> : null}</DragOverlay>
+      <DragOverlay>
+        {activeTask ? (
+          <div className="rotate-2 shadow-xl">
+            <TaskCard task={activeTask} />
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   )
 }
