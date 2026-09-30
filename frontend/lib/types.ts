@@ -15,8 +15,7 @@ export interface User {
 // Task priority matches the Business Central vocabulary the backend returns.
 // Status values are the board columns rendered on the Tareas page: the first
 // three come from BC, while "Esperando información / respuesta del cliente" is
-// platform-only (never emitted by BC). Moving a card is client-only and not
-// persisted yet, so a card resets to its BC/derived column on reload.
+// platform-only (set via a status override, never emitted by BC).
 export type TaskPriority = "Alta" | "Media" | "Baja"
 export type TaskStatus =
   | "Pendiente"

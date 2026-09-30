@@ -56,6 +56,26 @@ class TaskResponse(BaseModel):
     source: Literal["task", "obligation"] = "task"
 
 
+class TaskStatusUpdate(BaseModel):
+    """Request body to move a task/obligation card to a new workflow state."""
+
+    status: TaskStatus
+    source: Literal["task", "obligation"] = "task"
+
+
+class BoardOrderItem(BaseModel):
+    """One card in a reordered board column (its id and source)."""
+
+    id: str
+    source: Literal["task", "obligation"] = "task"
+
+
+class BoardOrderUpdate(BaseModel):
+    """Request body to set the shared vertical order of a board column's cards."""
+
+    ordered: list[BoardOrderItem]
+
+
 class TaskNoteCreate(BaseModel):
     """Request body to add an internal note to a task."""
 
