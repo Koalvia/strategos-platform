@@ -25,6 +25,7 @@ def _to_response(row, editable: bool) -> TrafficLightSettingsResponse:
         yellow_within_days=row.yellow_within_days,
         red_within_days=row.red_within_days,
         email_on_change_enabled=row.email_on_change_enabled,
+        notify_manager_on_change=row.notify_manager_on_change,
         updated_at=row.updated_at,
         editable=editable,
     )

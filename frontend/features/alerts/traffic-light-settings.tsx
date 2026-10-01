@@ -18,6 +18,7 @@ interface FormState {
   yellow: string
   red: string
   emailOnChange: boolean
+  notifyManager: boolean
 }
 
 function toFormState(settings: TrafficLightSettings): FormState {
@@ -25,6 +26,7 @@ function toFormState(settings: TrafficLightSettings): FormState {
     yellow: String(settings.yellow_within_days),
     red: String(settings.red_within_days),
     emailOnChange: settings.email_on_change_enabled,
+    notifyManager: settings.notify_manager_on_change,
   }
 }
 
@@ -100,6 +102,7 @@ export function TrafficLightSettingsPanel() {
         yellow_within_days: yellow,
         red_within_days: red,
         email_on_change_enabled: form.emailOnChange,
+        notify_manager_on_change: form.notifyManager,
       })
 
       if (result.success && result.data) {
@@ -191,6 +194,18 @@ export function TrafficLightSettingsPanel() {
               checked={form.emailOnChange}
               disabled={disabled}
               onCheckedChange={(checked) => update({ emailOnChange: checked })}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <Label htmlFor="notify-manager" className="cursor-pointer">
+              Enviarme a mí también estas alertas
+            </Label>
+            <Switch
+              id="notify-manager"
+              checked={form.notifyManager}
+              disabled={disabled}
+              onCheckedChange={(checked) => update({ notifyManager: checked })}
             />
           </div>
 

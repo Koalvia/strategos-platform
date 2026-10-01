@@ -232,6 +232,7 @@ def evaluate_traffic_transitions(reference_date: date | None = None):
                     title=title,
                     message=message,
                     obligation_code=instance.obligation_id,
+                    bc_project_id=instance.project_id,
                 )
                 staged += 1
             # Advance the remembered status whatever the transition was, so a

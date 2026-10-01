@@ -98,6 +98,9 @@ class Alert(Base):
     )
     # OBLIGATION alerts carry the opaque BC obligation id; BOPA alerts leave NULL.
     bc_obligation_id = Column(String, nullable=True, index=True)
+    # TRAFFIC_CHANGE alerts carry the obligation's BC project id so email dispatch
+    # can route them to that project's technician/responsible. Other alerts leave NULL.
+    bc_project_id = Column(String, nullable=True, index=True)
     # The BC obligation code (DNI/PASSAPORT/IVA/...) for OBLIGATION alerts, so the
     # email layer picks a template/category without re-reading BC. BOPA leaves NULL.
     obligation_code = Column(String, nullable=True)

@@ -9,6 +9,8 @@ export interface TrafficLightSettings {
   yellow_within_days: number
   red_within_days: number
   email_on_change_enabled: boolean
+  // When true, the director also receives the per-project traffic-light emails.
+  notify_manager_on_change: boolean
   updated_at: string | null
   // True only for a manager (scope sees everything); the UI hides the editor
   // entirely when false.
@@ -20,6 +22,7 @@ export interface TrafficLightSettingsUpdate {
   yellow_within_days: number
   red_within_days: number
   email_on_change_enabled: boolean
+  notify_manager_on_change: boolean
 }
 
 // Result envelope carrying the HTTP status so callers can tell a 403 (non-director)

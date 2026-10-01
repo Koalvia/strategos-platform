@@ -40,6 +40,7 @@ def test_get_seeds_defaults(client, db_session):
     assert body["yellow_within_days"] == 15
     assert body["red_within_days"] == 7
     assert body["email_on_change_enabled"] is True
+    assert body["notify_manager_on_change"] is False
     # The default test client's scope sees everything, so it may edit.
     assert body["editable"] is True
 
@@ -58,6 +59,7 @@ def test_update_as_director(client, db_session):
             "yellow_within_days": 30,
             "red_within_days": 10,
             "email_on_change_enabled": False,
+            "notify_manager_on_change": True,
         },
     )
 
@@ -66,11 +68,13 @@ def test_update_as_director(client, db_session):
     assert body["yellow_within_days"] == 30
     assert body["red_within_days"] == 10
     assert body["email_on_change_enabled"] is False
+    assert body["notify_manager_on_change"] is True
 
     row = db_session.get(TrafficLightSettings, TRAFFIC_LIGHT_SETTINGS_ID)
     assert row.yellow_within_days == 30
     assert row.red_within_days == 10
     assert row.email_on_change_enabled is False
+    assert row.notify_manager_on_change is True
 
 
 @pytest.mark.integration
@@ -86,6 +90,7 @@ def test_update_as_non_director_forbidden(client, db_session):
             "yellow_within_days": 30,
             "red_within_days": 10,
             "email_on_change_enabled": False,
+            "notify_manager_on_change": True,
         },
     )
 
@@ -115,6 +120,7 @@ def test_update_invalid_thresholds_returns_422(client, yellow, red):
             "yellow_within_days": yellow,
             "red_within_days": red,
             "email_on_change_enabled": True,
+            "notify_manager_on_change": False,
         },
     )
 

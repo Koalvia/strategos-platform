@@ -316,7 +316,10 @@ def test_thresholds_are_read_from_the_settings_store(frozen_client, db_session):
     # Widen the red window to 15 days (-> 2026-07-16), which now swallows pobl-007.
     SettingsService(db_session).update_traffic_light(
         TrafficLightSettingsUpdate(
-            red_within_days=15, yellow_within_days=30, email_on_change_enabled=True
+            red_within_days=15,
+            yellow_within_days=30,
+            email_on_change_enabled=True,
+            notify_manager_on_change=False,
         )
     )
 
