@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .models import (
     DEFAULT_EMAIL_ON_CHANGE_ENABLED,
+    DEFAULT_NOTIFY_MANAGER_ON_CHANGE,
     DEFAULT_RED_WITHIN_DAYS,
     DEFAULT_YELLOW_WITHIN_DAYS,
     TRAFFIC_LIGHT_SETTINGS_ID,
@@ -38,6 +39,7 @@ class SettingsService:
                 yellow_within_days=DEFAULT_YELLOW_WITHIN_DAYS,
                 red_within_days=DEFAULT_RED_WITHIN_DAYS,
                 email_on_change_enabled=DEFAULT_EMAIL_ON_CHANGE_ENABLED,
+                notify_manager_on_change=DEFAULT_NOTIFY_MANAGER_ON_CHANGE,
             )
             self.db.add(settings_row)
             self.db.commit()
@@ -64,6 +66,7 @@ class SettingsService:
         settings_row.yellow_within_days = data.yellow_within_days
         settings_row.red_within_days = data.red_within_days
         settings_row.email_on_change_enabled = data.email_on_change_enabled
+        settings_row.notify_manager_on_change = data.notify_manager_on_change
         self.db.commit()
         self.db.refresh(settings_row)
         return settings_row

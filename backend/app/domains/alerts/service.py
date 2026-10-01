@@ -147,6 +147,7 @@ class AlertsService:
         title: str,
         message: str,
         obligation_code: str | None = None,
+        bc_project_id: str | None = None,
     ) -> Alert:
         """Stage a traffic-light colour-change alert (the caller commits).
 
@@ -167,6 +168,7 @@ class AlertsService:
             alert_type=AlertType.OBLIGATION,
             category=AlertCategory.TRAFFIC_CHANGE,
             obligation_code=obligation_code,
+            bc_project_id=bc_project_id,
             title=title,
             message=message,
             status=AlertStatus.NEW,

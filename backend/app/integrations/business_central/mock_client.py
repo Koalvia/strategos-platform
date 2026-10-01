@@ -11,6 +11,7 @@ shared fixture state.
 """
 
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
@@ -54,6 +55,21 @@ def _load(filename: str, model: type) -> list:
     return TypeAdapter(list[model]).validate_python(raw)
 
 
+def _load_dev(filename: str, model: type) -> list:
+    """Load ``fixtures/dev/<filename>`` only when ``STRATEGOS_DEV_FIXTURES=1``.
+
+    Opt-in local/demo data (e.g. an email-test project); absent by default so the
+    test suite and normal runs are unaffected.
+    """
+    if os.environ.get("STRATEGOS_DEV_FIXTURES") != "1":
+        return []
+    path = _FIXTURES_DIR / "dev" / filename
+    if not path.exists():
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return TypeAdapter(list[model]).validate_python(raw)
+
+
 # Validate every fixture once at import so a malformed fixture fails loudly and
 # early rather than on the first request.
 _CUSTOMERS = _load("customers.json", BCCustomer)
@@ -73,6 +89,13 @@ _TIME_SHEET_POSTING_ENTRIES = _load(
     "time_sheet_posting_entries.json", BCTimeSheetPostingEntry
 )
 _RESOURCES = _load("resources.json", BCResource)
+
+# Opt-in dev/demo fixtures (STRATEGOS_DEV_FIXTURES=1), appended to the base set.
+_USERS += _load_dev("users.json", BCUser)
+_CUSTOMERS += _load_dev("customers.json", BCCustomer)
+_PROJECTS += _load_dev("projects.json", BCProject)
+_PROJECT_OBLIGATIONS += _load_dev("project_obligations.json", BCProjectObligation)
+_RESOURCES += _load_dev("resources.json", BCResource)
 _CUSTOMER_RESOURCES = _load("customer_resources.json", BCCustomerResource)
 
 _T = TypeVar("_T")

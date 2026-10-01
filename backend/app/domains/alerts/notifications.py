@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app import logger
 from app.core.config import settings
 from app.core.email import EmailService
+from app.core.visibility import project_owner_emails, users_by_key
 from app.domains.alerts.models import (
     Alert,
     AlertCategory,
@@ -24,6 +25,7 @@ from app.domains.alerts.models import (
 )
 from app.domains.alerts.utils import alert_category
 from app.domains.auth.models import User
+from app.domains.settings.service import SettingsService
 from app.integrations.business_central.client import BusinessCentralClient
 
 # Template file and subject line per category.
@@ -55,6 +57,7 @@ class _Routing:
     """
 
     def __init__(self, bc_client: BusinessCentralClient):
+        self._bc = bc_client
         resources = bc_client.get_resources()
         email_by_resource = {
             r.id: (r.email or "").strip().casefold()
@@ -71,9 +74,38 @@ class _Routing:
             email = email_by_resource.get(assignment.resource_id)
             if email and assignment.customer_id:
                 self._emails_by_customer[assignment.customer_id].add(email)
+        # Project maps for traffic-light routing are built lazily on first use, so a
+        # dispatch with no TRAFFIC_CHANGE alerts pays nothing for them.
+        self._traffic_ready = False
+        self._projects_by_id: dict = {}
+        self._users_by_key: dict = {}
 
     def emails_for(self, customer_id: str) -> set[str]:
         return self._manager_emails | self._emails_by_customer.get(customer_id, set())
+
+    def _ensure_traffic_maps(self) -> None:
+        if self._traffic_ready:
+            return
+        self._projects_by_id = {p.id: p for p in self._bc.get_projects()}
+        self._users_by_key = users_by_key(self._bc.get_users())
+        self._traffic_ready = True
+
+    def traffic_emails(
+        self, project_id: str | None, include_manager: bool
+    ) -> set[str] | None:
+        """Recipients for a traffic-light alert: the project's technician + responsible.
+
+        Adds the manager emails only when ``include_manager``. Returns ``None`` if the
+        project cannot be resolved, so the caller can fall back.
+        """
+        self._ensure_traffic_maps()
+        project = self._projects_by_id.get(project_id) if project_id else None
+        if project is None:
+            return None
+        emails = set(project_owner_emails(project, self._users_by_key))
+        if include_manager:
+            emails |= self._manager_emails
+        return emails
 
 
 def dispatch_pending_alert_emails(db: Session, bc_client: BusinessCentralClient) -> int:
@@ -101,6 +133,7 @@ def dispatch_pending_alert_emails(db: Session, bc_client: BusinessCentralClient)
         return 0
 
     routing = _Routing(bc_client)
+    notify_manager = SettingsService(db).get_traffic_light().notify_manager_on_change
     users_by_email = {
         (u.email or "").casefold(): u
         for u in db.query(User).filter(User.is_verified.is_(True)).all()
@@ -117,7 +150,15 @@ def dispatch_pending_alert_emails(db: Session, bc_client: BusinessCentralClient)
         category = alert_category(
             alert.alert_type, alert.obligation_code, alert.category
         )
-        recipient_emails = routing.emails_for(alert.customer_id)
+        # Traffic-light alerts go to the project's technician + responsible (and the
+        # manager only if the director opted in); everything else routes by customer.
+        recipient_emails = None
+        if category == AlertCategory.TRAFFIC_CHANGE:
+            recipient_emails = routing.traffic_emails(
+                alert.bc_project_id, notify_manager
+            )
+        if recipient_emails is None:
+            recipient_emails = routing.emails_for(alert.customer_id)
         if not recipient_emails:
             logger.warning(
                 "Alert %s (customer %s) has no email recipient; marking as sent.",

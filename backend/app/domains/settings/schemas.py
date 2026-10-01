@@ -17,6 +17,7 @@ class TrafficLightSettingsResponse(BaseModel):
     yellow_within_days: int
     red_within_days: int
     email_on_change_enabled: bool
+    notify_manager_on_change: bool
     updated_at: datetime | None
     editable: bool = False
 
@@ -31,3 +32,4 @@ class TrafficLightSettingsUpdate(BaseModel):
     yellow_within_days: int
     red_within_days: int
     email_on_change_enabled: bool
+    notify_manager_on_change: bool

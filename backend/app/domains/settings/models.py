@@ -22,6 +22,7 @@ TRAFFIC_LIGHT_SETTINGS_ID = 1
 DEFAULT_YELLOW_WITHIN_DAYS = 15
 DEFAULT_RED_WITHIN_DAYS = 7
 DEFAULT_EMAIL_ON_CHANGE_ENABLED = True
+DEFAULT_NOTIFY_MANAGER_ON_CHANGE = False
 
 
 class TrafficLightSettings(Base):
@@ -39,6 +40,7 @@ class TrafficLightSettings(Base):
     yellow_within_days = Column(Integer, nullable=False)
     red_within_days = Column(Integer, nullable=False)
     email_on_change_enabled = Column(Boolean, nullable=False)
+    notify_manager_on_change = Column(Boolean, nullable=False)
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

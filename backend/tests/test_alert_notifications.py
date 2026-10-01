@@ -18,7 +18,14 @@ from app.domains.alerts.models import (
 )
 from app.domains.alerts.notifications import dispatch_pending_alert_emails
 from app.domains.auth.models import User
+from app.domains.settings.service import SettingsService
 from app.integrations.business_central.mock_client import MockBusinessCentralClient
+from app.integrations.business_central.models import (
+    BCProject,
+    BCProjectObligation,
+    BCResource,
+    BCUser,
+)
 
 MANAGER = "marc@strategos.ad"
 ASSIGNED = "jordi@strategos.ad"  # cust-001, cust-002
@@ -199,3 +206,116 @@ def test_test_mode_with_blank_recipient_refuses_to_send(
 
     assert dispatch_pending_alert_emails(db_session, MockBusinessCentralClient()) == 0
     assert sent == []
+
+
+# --------------------------------------------------------------------------- #
+# Traffic-light alerts route to the project's technician + responsible, not by
+# customer. The important case: the technician is the email-test account.
+# --------------------------------------------------------------------------- #
+
+TEST_TECH_EMAIL = "brian.marin+strategosemailtest@koalvia.com"
+TEST_MANAGER_EMAIL = "brian.marin+managerstrategosemailtest@koalvia.com"
+
+
+class _TrafficBC(MockBusinessCentralClient):
+    """Mock BC with a project whose technician is the email-test user.
+
+    Only the readers the dispatcher touches are overridden; the manager is a
+    separate resource so we can prove they are added only when the toggle is on.
+    """
+
+    def get_resources(self):
+        return [BCResource(id="RES-M", name="Manager Test", email=TEST_MANAGER_EMAIL,
+                           manage_all_customers=True)]
+
+    def get_customer_resources(self):
+        return []
+
+    def get_users(self):
+        return [
+            BCUser(id="u-tech", name="Brian Test", email=TEST_TECH_EMAIL,
+                   user_name="BRIANTEST"),
+            BCUser(id="u-mgr", name="Manager Test", email=TEST_MANAGER_EMAIL,
+                   user_name="MGR"),
+        ]
+
+    def get_projects(self):
+        return [BCProject(id="p1", name="Proyecto Test", customer_id="c1",
+                          responsible="", technician="BRIANTEST", status="Activo")]
+
+    def get_project_obligations(self):
+        return [BCProjectObligation(id="ob1", project_id="p1", obligation_id="obl-is")]
+
+
+def _traffic_alert(db_session) -> Alert:
+    alert = Alert(
+        customer_id="c1",
+        alert_type=AlertType.OBLIGATION,
+        bc_project_id="p1",
+        category=AlertCategory.TRAFFIC_CHANGE,
+        status=AlertStatus.NEW,
+        title="Semáforo",
+        message="msg",
+    )
+    db_session.add(alert)
+    db_session.commit()
+    db_session.refresh(alert)
+    return alert
+
+
+@pytest.fixture
+def traffic_users(db_session):
+    """Verified app accounts for the technician and the manager."""
+    for email in (TEST_TECH_EMAIL, TEST_MANAGER_EMAIL):
+        db_session.add(
+            User(name=email, email=email, hashed_password="x", is_verified=True)
+        )
+    db_session.commit()
+
+
+def _set_notify_manager(db_session, value: bool) -> None:
+    row = SettingsService(db_session).get_traffic_light()
+    row.notify_manager_on_change = value
+    db_session.commit()
+
+
+@pytest.mark.integration
+def test_traffic_change_emails_project_technician(db_session, traffic_users, sent):
+    """A traffic-light alert reaches the project's technician (the email-test user)."""
+    _traffic_alert(db_session)  # notify_manager defaults to False
+
+    dispatch_pending_alert_emails(db_session, _TrafficBC())
+
+    assert _real_recipients(sent) == {TEST_TECH_EMAIL}
+
+
+@pytest.mark.integration
+def test_traffic_change_includes_manager_only_when_toggled(
+    db_session, traffic_users, sent
+):
+    """With the director toggle on, the manager is added to the technician."""
+    _set_notify_manager(db_session, True)
+    _traffic_alert(db_session)
+
+    dispatch_pending_alert_emails(db_session, _TrafficBC())
+
+    assert _real_recipients(sent) == {TEST_TECH_EMAIL, TEST_MANAGER_EMAIL}
+
+
+@pytest.mark.integration
+def test_traffic_change_respects_optout(db_session, traffic_users, sent):
+    """The technician opting out of TRAFFIC_CHANGE stops their email."""
+    tech = db_session.query(User).filter(User.email == TEST_TECH_EMAIL).one()
+    db_session.add(
+        UserAlertPreference(
+            user_id=tech.id,
+            category=AlertCategory.TRAFFIC_CHANGE,
+            email_enabled=False,
+        )
+    )
+    db_session.commit()
+    _traffic_alert(db_session)
+
+    dispatch_pending_alert_emails(db_session, _TrafficBC())
+
+    assert TEST_TECH_EMAIL not in _real_recipients(sent)
