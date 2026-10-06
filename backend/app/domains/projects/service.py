@@ -10,9 +10,11 @@ client (``get_projects_page``) rather than applied here — see that method on
 each implementation.
 """
 
+import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app import logger
 from app.core.visibility import (
     CustomerScope,
     may_see_project,
@@ -21,6 +23,7 @@ from app.core.visibility import (
 from app.integrations.business_central.client import (
     DEFAULT_PROJECTS_PAGE_SIZE,
     BusinessCentralClient,
+    BusinessCentralUnavailable,
 )
 from app.integrations.business_central.models import BCProject, ProjectStatus
 
@@ -89,8 +92,9 @@ class ProjectsService:
 
         customer_ids = {p.customer_id for p in items if p.customer_id}
         names_by_id = self.bc_client.get_customer_names(list(customer_ids))
+        people = self._person_names() if items else {}
         return ProjectPageResponse(
-            items=[self._to_response(p, names_by_id) for p in items],
+            items=[self._to_response(p, names_by_id, people) for p in items],
             next_cursor=next_cursor,
             no_assigned_customers=no_assigned_customers,
         )
@@ -115,7 +119,7 @@ class ProjectsService:
                 )
             if visible:
                 names_by_id = self.bc_client.get_customer_names([project.customer_id])
-                return self._to_response(project, names_by_id)
+                return self._to_response(project, names_by_id, self._person_names())
             break
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -144,9 +148,37 @@ class ProjectsService:
             projects = [p for p in projects if p.status is status]
         return projects
 
+    def _person_names(self) -> dict[str, str]:
+        """Map BC person codes (casefolded) to display names.
+
+        BC stores the project's technician (``projectManager``) as a User ID and
+        its responsible (``personResponsible``) as a resource ``no``, so both the
+        users (``userName``) and resource cards are indexed. Users win on a clash.
+        A failed read degrades to showing the raw codes rather than failing the page.
+        """
+        names: dict[str, str] = {}
+        try:
+            for bc_user in self.bc_client.get_users():
+                if bc_user.user_name and bc_user.name:
+                    names.setdefault(bc_user.user_name.casefold(), bc_user.name)
+            for resource in self.bc_client.get_resources():
+                if resource.id and resource.name:
+                    names.setdefault(resource.id.casefold(), resource.name)
+        except (BusinessCentralUnavailable, httpx.HTTPError):
+            logger.warning("Could not resolve project person names", exc_info=True)
+        return names
+
     @staticmethod
+    def _display_name(code: str, people: dict[str, str]) -> str:
+        """The person's name for a BC code, or the code itself if unresolved."""
+        return people.get(code.casefold(), code) if code else code
+
+    @classmethod
     def _to_response(
-        project: BCProject, names_by_id: dict[str, str]
+        cls,
+        project: BCProject,
+        names_by_id: dict[str, str],
+        people: dict[str, str] | None = None,
     ) -> ProjectResponse:
         """Map a Business Central project DTO to the API response shape."""
         return ProjectResponse(
@@ -158,8 +190,8 @@ class ProjectsService:
             ),
             project_type=project.project_type,
             entity_type=project.entity_type,
-            responsible=project.responsible,
-            technician=project.technician,
+            responsible=cls._display_name(project.responsible, people or {}),
+            technician=cls._display_name(project.technician, people or {}),
             has_certificate=project.has_certificate,
             certificate_expiry=project.certificate_expiry,
             filing_date=project.filing_date,
