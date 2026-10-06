@@ -27,6 +27,8 @@ from app.integrations.business_central.models import (
     BCCustomerRefPage,
     BCProject,
     BCProjectPage,
+    BCResource,
+    BCUser,
     CustomerStatus,
     ProjectStatus,
 )
@@ -414,6 +416,54 @@ def test_project_type_filter_excludes_untyped_projects_without_crashing():
     service = ProjectsService(db=None, bc_client=_LiveShapedBCClient())
     assert service.list_projects(project_type="Iguala mensual").items == []
     assert service.list_projects(entity_type="Societat").items == []
+
+
+class _CodedPeopleBCClient(_LiveShapedBCClient):
+    """Live-shaped projects whose technician/responsible are BC codes, not names."""
+
+    def get_projects(self, **kwargs):
+        return [
+            BCProject(
+                id="P1",
+                name="Fiscal advisory",
+                customer_id="C1",
+                responsible="RES-07",
+                technician="AGUSTINA",
+                status=ProjectStatus.active,
+            ),
+            BCProject(
+                id="P2",
+                name="Payroll",
+                customer_id="C1",
+                responsible="UNKNOWN",
+                technician="",
+                status=ProjectStatus.active,
+            ),
+        ]
+
+    def get_users(self):
+        return [
+            BCUser(id="u1", name="Agustina Pérez", email="", user_name="AGUSTINA")
+        ]
+
+    def get_resources(self):
+        return [BCResource(id="RES-07", name="Marta Riba")]
+
+
+@pytest.mark.unit
+def test_technician_and_responsible_codes_resolve_to_person_names():
+    """BC codes show as names: technician via user ID, responsible via resource no."""
+    service = ProjectsService(db=None, bc_client=_CodedPeopleBCClient())
+    items = {p.id: p for p in service.list_projects().items}
+    assert items["P1"].technician == "Agustina Pérez"
+    assert items["P1"].responsible == "Marta Riba"
+    # Unresolvable codes fall back to the raw value; blanks stay blank.
+    assert items["P2"].responsible == "UNKNOWN"
+    assert items["P2"].technician == ""
+
+    detail = service.get_project("P1")
+    assert detail.technician == "Agustina Pérez"
+    assert detail.responsible == "Marta Riba"
 
 
 @pytest.mark.auth
