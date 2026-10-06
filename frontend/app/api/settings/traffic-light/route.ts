@@ -58,6 +58,7 @@ export async function PUT(request: NextRequest) {
           yellow_within_days: body.yellow_within_days,
           red_within_days: body.red_within_days,
           email_on_change_enabled: body.email_on_change_enabled,
+          notify_manager_on_change: body.notify_manager_on_change,
         }),
       },
     )
