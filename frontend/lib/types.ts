@@ -22,6 +22,7 @@ export type TaskStatus =
   | "En curso"
   | "Esperando información / respuesta del cliente"
   | "Hecho"
+  | "Archivada"
 
 interface TaskEntityRef {
   id: string

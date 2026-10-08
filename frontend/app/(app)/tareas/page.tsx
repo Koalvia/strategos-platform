@@ -10,8 +10,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { tasksApi } from "@/features/tasks/api"
+import { ArchivedTasks } from "@/features/tasks/archived-tasks"
 import { TasksBoard } from "@/features/tasks/tasks-board"
-import { TASK_STATUS_ORDER, TASK_STATUS_SHORT_LABEL } from "@/features/tasks/status"
+import {
+  ARCHIVED_LABEL,
+  ARCHIVED_STATUS,
+  TASK_STATUS_ORDER,
+  TASK_STATUS_SHORT_LABEL,
+} from "@/features/tasks/status"
 import type { Task, TaskStatus } from "@/lib/types"
 
 const ALL = "all"
@@ -61,12 +67,17 @@ export default function TareasPage() {
                 {TASK_STATUS_SHORT_LABEL[option]}
               </SelectItem>
             ))}
+            <SelectItem value={ARCHIVED_STATUS}>{ARCHIVED_LABEL}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       <div className="mt-6">
-        <TasksBoard tasks={tasks} loading={loading} />
+        {status === ARCHIVED_STATUS ? (
+          <ArchivedTasks tasks={tasks} loading={loading} />
+        ) : (
+          <TasksBoard tasks={tasks} loading={loading} />
+        )}
       </div>
     </div>
   )

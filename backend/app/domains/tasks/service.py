@@ -96,7 +96,10 @@ class TasksService:
             for t in tasks
         ]
 
-        if status is not None:
+        # Archived tasks never show in "mis tareas"/dashboard unless asked explicitly.
+        if status is None:
+            responses = [r for r in responses if r.status is not TaskStatus.archived]
+        else:
             responses = [r for r in responses if r.status is status]
         return responses
 
@@ -152,7 +155,11 @@ class TasksService:
             if (c.source, c.id) in positions
             else (1, 0)
         )
-        if status is not None:
+        # Archived cards are hidden from the board by default; shown only when the
+        # caller explicitly asks for status=archived (the "Archivadas" filter).
+        if status is None:
+            cards = [c for c in cards if c.status is not TaskStatus.archived]
+        else:
             cards = [c for c in cards if c.status is status]
         return cards
 
