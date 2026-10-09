@@ -38,3 +38,11 @@ class ResetPassword(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+class MicrosoftLoginStart(BaseModel):
+    authorization_url: str
+    flow: dict
+
+class MicrosoftCallback(BaseModel):
+    flow: dict
+    auth_response: dict[str, str]

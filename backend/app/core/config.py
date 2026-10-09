@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     BC_API_GROUP: str = "integrations"
     BC_API_VERSION: str = "v1.0"
 
+    # Microsoft SSO (Entra ID). Values come from .env
+    MS_SSO_ENABLED: bool = False
+    MS_TENANT_ID: str = ""
+    MS_CLIENT_ID: str = ""
+    MS_CLIENT_SECRET: str = ""
+    MS_REDIRECT_URI: str = ""
+    # Comma-separated tenant IDs allowed to sign in. Empty falls back to MS_TENANT_ID.
+    MS_ALLOWED_TENANT_IDS: str = ""
     # BOPA integration mode. "mock" (default) serves committed fixtures with no
     # network calls; "live" talks to the real BOPA Azure Functions API using the
     # BOPA_* settings below.

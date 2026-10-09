@@ -18,6 +18,8 @@ export const config = {
           forgotPassword: "/api/v1/auth/forgot-password",
           resetPassword: "/api/v1/auth/reset-password",
           me: "/api/v1/auth/me",
+          microsoftLogin: "/api/v1/auth/microsoft/login",
+          microsoftCallback: "/api/v1/auth/microsoft/callback",
         },
         tasks: {
           base: "/api/v1/tasks",

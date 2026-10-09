@@ -2,9 +2,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from . import models, schemas, utils
+from . import microsoft, models, schemas, utils
 from .tasks import (
     send_password_reset_email_task,
     send_verification_email_task,
@@ -74,6 +75,22 @@ class AuthService:
 
         access_token = utils.create_access_token(data={"sub": str(user.id)})
         return {"access_token": access_token, "token_type": "bearer"}
+
+    def microsoft_login_start(self) -> dict:
+        """Start Microsoft sign-in flow."""
+        flow = microsoft.start_flow()
+        return {"authorization_url": flow ["auth_uri"], "flow": flow}
+
+    def login_with_microsoft(self, flow: dict, auth_response: dict) -> dict:
+        """Log in an existin user via Microsoft; never creates users."""
+        try:
+            email = microsoft.email_from_callback(flow, auth_response)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Microsoft sign-in failed")
+        user = self.db.query(models.User).filter(func.lower(models.User.email) == email).first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No account for this Microsoft user")
+        return {"access_token": utils.create_access_token(data={"sub": str(user.id)}), "token_type": "bearer"}
 
     def verify_email(self, token: str) -> models.User:
         """Verify user email with token"""
