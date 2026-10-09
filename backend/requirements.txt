@@ -21,6 +21,6 @@ pytest-cov
 httpx
 faker
 sentry-sdk
-
+msal
 # Lint
 ruff

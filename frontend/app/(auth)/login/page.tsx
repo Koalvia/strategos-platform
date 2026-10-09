@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -11,12 +11,30 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { authApi } from "@/features/auth/api"
 
+const SSO_ERRORS: Record<string, string> = {
+  sso_no_account: "Your Microsoft account does not have access to Strategos.",
+  sso_expired: "The Microsoft sign-in failed. Please try again.",
+  sso_failed: "Microsoft sign-in failed. Please try again.",
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [ssoEnabled, setSsoEnabled] = useState(false)
+
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("error")
+    if (code && SSO_ERRORS[code]) setError(SSO_ERRORS[code])
+
+    // The backend owns the flag, so it works without rebuilding the frontend.
+    fetch("/api/auth/sso")
+      .then((res) => res.json())
+      .then((data) => setSsoEnabled(Boolean(data.microsoft)))
+      .catch(() => setSsoEnabled(false))
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -89,6 +107,18 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Signing in..." : "Sign in"}
             </Button>
+            {ssoEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  window.location.href = "/api/auth/microsoft"
+                }}
+              >
+                Sign in with Microsoft
+              </Button>
+            )}
             <p className="text-sm text-center text-muted-foreground">
               Don't have an account?{" "}
               <Link href="/register" className="text-primary hover:underline">
