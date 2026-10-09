@@ -24,12 +24,13 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
+import { Archive } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
 import { tasksApi } from "@/features/tasks/api"
 import { TaskCard } from "./task-card"
-import { TASK_STATUS_ORDER, TASK_STATUS_SHORT_LABEL } from "./status"
+import { ARCHIVED_STATUS, TASK_STATUS_ORDER, TASK_STATUS_SHORT_LABEL } from "./status"
 import type { Task, TaskStatus } from "@/lib/types"
 
 interface TasksBoardProps {
@@ -49,13 +50,35 @@ function groupByColumn(tasks: Task[]): Columns {
 }
 
 // A sortable card: draggable up/down within a column and across columns.
-function SortableCard({ task }: { task: Task }) {
+function SortableCard({
+  task,
+  onArchive,
+}: {
+  task: Task
+  onArchive: (task: Task) => void
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id })
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
   }
+  // stopPropagation keeps a click/press on the button from starting a drag.
+  const archiveButton = (
+    <button
+      type="button"
+      title="Archivar"
+      aria-label="Archivar"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        onArchive(task)
+      }}
+      className="rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+    >
+      <Archive className="size-4" />
+    </button>
+  )
   return (
     <div
       ref={setNodeRef}
@@ -65,15 +88,13 @@ function SortableCard({ task }: { task: Task }) {
       className="cursor-grab touch-none active:cursor-grabbing"
     >
       {isDragging ? (
-        // At the landing slot: a translucent preview of the card (where it will go),
-        // outlined as a placeholder while its solid copy follows the cursor.
         <div className="rounded-xl border-2 border-dashed border-slate-300">
           <div className="opacity-40">
             <TaskCard task={task} />
           </div>
         </div>
       ) : (
-        <TaskCard task={task} />
+        <TaskCard task={task} action={archiveButton} />
       )}
     </div>
   )
@@ -85,10 +106,12 @@ function Column({
   status,
   tasks,
   highlight,
+  onArchive,
 }: {
   status: TaskStatus
   tasks: Task[]
   highlight: boolean
+  onArchive: (task: Task) => void
 }) {
   const { setNodeRef } = useDroppable({ id: status })
   return (
@@ -113,7 +136,9 @@ function Column({
           {tasks.length === 0 ? (
             <p className="px-1 text-sm text-slate-400">Sin tareas.</p>
           ) : (
-            tasks.map((task) => <SortableCard key={task.id} task={task} />)
+            tasks.map((task) => (
+              <SortableCard key={task.id} task={task} onArchive={onArchive} />
+            ))
           )}
         </div>
       </SortableContext>
@@ -297,6 +322,26 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
     setOverColumn(null)
   }
 
+  // Archive a card: remove it optimistically, then persist; roll back on failure.
+  const handleArchive = async (task: Task) => {
+    const snapshot = columns
+    setColumns((prev) => ({
+      ...prev,
+      [task.status]: (prev[task.status] ?? []).filter((t) => t.id !== task.id),
+    }))
+    const res = await tasksApi.updateStatus(task.id, ARCHIVED_STATUS, task.source)
+    if (!res.success) {
+      setColumns(snapshot)
+      toast.error(
+        res.message?.includes("Not allowed")
+          ? "No tienes permiso para archivar esta tarea."
+          : "No se pudo archivar la tarea. Inténtalo de nuevo.",
+      )
+    } else {
+      toast.success("Tarea archivada.")
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-60 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white">
@@ -321,6 +366,7 @@ export function TasksBoard({ tasks, loading }: TasksBoardProps) {
             status={status}
             tasks={columns[status]}
             highlight={overColumn === status}
+            onArchive={handleArchive}
           />
         ))}
       </div>

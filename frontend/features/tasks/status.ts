@@ -17,4 +17,8 @@ export const TASK_STATUS_SHORT_LABEL: Record<TaskStatus, string> = {
   "En curso": "En curso",
   "Esperando información / respuesta del cliente": "Esperando cliente",
   "Hecho": "Hecho",
+  "Archivada": "Archivadas",
 }
+
+export const ARCHIVED_STATUS: TaskStatus = "Archivada"
+export const ARCHIVED_LABEL = "Archivadas"

@@ -6,12 +6,15 @@ import {
   STATUS_DOT,
   TRAFFIC_LIGHT_LABEL,
 } from "@/features/obligations/status-style"
+import type { ReactNode } from "react"
+
 import { getInitials } from "@/lib/navigation"
 import { cn } from "@/lib/utils"
 import type { Task, TaskPriority } from "@/lib/types"
 
 interface TaskCardProps {
   task: Task
+  action?: ReactNode
 }
 
 // Format an ISO date (YYYY-MM-DD) as DD/MM/YYYY without timezone drift.
@@ -29,26 +32,29 @@ const PRIORITY_BADGE: Record<TaskPriority, string> = {
   Baja: "bg-slate-100 text-slate-600",
 }
 
-export function TaskCard({ task }: TaskCardProps) {
+export function TaskCard({ task, action }: TaskCardProps) {
   const traffic = task.trafficLight
   return (
     <Card className="gap-4 border-slate-200 px-5 py-5">
-      <div className="flex items-start gap-3">
-        {traffic && (
-          <span
-            className={cn(
-              "mt-1.5 size-2 shrink-0 rounded-full",
-              STATUS_DOT[traffic],
-            )}
-          />
-        )}
-        <div className="min-w-0">
-          <h3 className="text-base font-bold text-slate-900">{task.title}</h3>
-          <p className="truncate text-sm text-slate-500">
-            {task.project.name}
-            {task.client ? ` · ${task.client.name}` : ""}
-          </p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          {traffic && (
+            <span
+              className={cn(
+                "mt-1.5 size-2 shrink-0 rounded-full",
+                STATUS_DOT[traffic],
+              )}
+            />
+          )}
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-slate-900">{task.title}</h3>
+            <p className="truncate text-sm text-slate-500">
+              {task.project.name}
+              {task.client ? ` · ${task.client.name}` : ""}
+            </p>
+          </div>
         </div>
+        {action && <div className="shrink-0">{action}</div>}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
