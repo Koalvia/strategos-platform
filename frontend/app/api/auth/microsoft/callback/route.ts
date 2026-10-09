@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
                 }),
             },
         )
+        // Same cookie as the password login (app/api/auth/login/route.ts), 7 days on purpose.
+        // The 30-minute JWT may expire sooner: /api/auth/me then returns 401, deletes this
+        // cookie and the app shell redirects to /login. Session length is a separate topic.
         cookieStore.set("auth-token", data.access_token, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
