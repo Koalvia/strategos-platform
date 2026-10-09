@@ -39,6 +39,7 @@ def login(user_data: schemas.UserLogin, response: Response, db: Session = Depend
 
     return token_data
 
+
 def _require_sso_enabled():
     if not settings.MS_SSO_ENABLED:
         raise HTTPException(status_code=404, detail="Not found")
@@ -49,10 +50,12 @@ def microsoft_login(db: Session = Depends(get_db)):
     """Return the Microsoft authorization URL and flow state."""
     return service.AuthService(db).microsoft_login_start()
 
+
 @router.post("/microsoft/callback", response_model=schemas.Token, dependencies=[Depends(_require_sso_enabled)])
-def microsoft_callback(data:schemas.MicrosoftCallback, db: Session = Depends(get_db)):
+def microsoft_callback(data: schemas.MicrosoftCallback, db: Session = Depends(get_db)):
     """Complete Microsoft sign-in and return a JWT."""
     return service.AuthService(db).login_with_microsoft(data.flow, data.auth_response)
+
 
 @router.post("/logout", response_model=schemas.MessageResponse)
 def logout(response: Response):

@@ -1,3 +1,5 @@
+from functools import cache
+
 import msal
 
 from app.core.config import settings
@@ -5,6 +7,7 @@ from app.core.config import settings
 SCOPES = ["User.Read"]
 
 
+@cache
 def _app() -> msal.ConfidentialClientApplication:
     # "organizations" accepts any work/school tenant; allowed_tenant_ids() narrows it.
     return msal.ConfidentialClientApplication(
@@ -40,4 +43,7 @@ def email_from_callback(flow: dict, auth_response: dict) -> str:
     # must be checked here or a foreign tenant could present one of our emails.
     if str(claims.get("tid", "")).lower() not in allowed_tenant_ids():
         raise ValueError("Microsoft tenant is not allowed")
-    return (claims.get("preferred_username") or claims.get("email") or "").lower()
+    email = (claims.get("preferred_username") or claims.get("email") or "").lower()
+    if not email:
+        raise ValueError("Microsoft token has no email")
+    return email

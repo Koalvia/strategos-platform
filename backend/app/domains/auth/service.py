@@ -79,10 +79,10 @@ class AuthService:
     def microsoft_login_start(self) -> dict:
         """Start Microsoft sign-in flow."""
         flow = microsoft.start_flow()
-        return {"authorization_url": flow ["auth_uri"], "flow": flow}
+        return {"authorization_url": flow["auth_uri"], "flow": flow}
 
     def login_with_microsoft(self, flow: dict, auth_response: dict) -> dict:
-        """Log in an existin user via Microsoft; never creates users."""
+        """Log in an existing, verified user via Microsoft; never creates users."""
         try:
             email = microsoft.email_from_callback(flow, auth_response)
         except ValueError:
@@ -90,6 +90,9 @@ class AuthService:
         user = self.db.query(models.User).filter(func.lower(models.User.email) == email).first()
         if not user:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No account for this Microsoft user")
+        # Same gate as password login; get_verified_user rejects unverified users anyway.
+        if not user.is_verified:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your email before logging in")
         return {"access_token": utils.create_access_token(data={"sub": str(user.id)}), "token_type": "bearer"}
 
     def verify_email(self, token: str) -> models.User:

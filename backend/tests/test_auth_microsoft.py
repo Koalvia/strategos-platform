@@ -69,6 +69,23 @@ def test_callback_unknown_email_is_forbidden_and_creates_no_user(client, db_sess
     assert db_session.query(User).count() == users_before
 
 
+def test_callback_unverified_user_is_forbidden(client, db_session, sso_enabled, monkeypatch):
+    db_session.add(User(name="Pending", email="pending@example.com", hashed_password="x", is_verified=False))
+    db_session.commit()
+    _mock_microsoft_email(monkeypatch, "pending@example.com")
+
+    response = client.post(CALLBACK_URL, json=CALLBACK_BODY)
+
+    assert response.status_code == 403
+
+
+def test_wrapper_rejects_token_without_email(monkeypatch, allowed_tenants):
+    monkeypatch.setattr(microsoft, "_app", _fake_msal({"tid": KOALVIA_TID}))
+
+    with pytest.raises(ValueError):
+        microsoft.email_from_callback({}, {})
+
+
 def test_callback_invalid_microsoft_response_is_unauthorized(client, sso_enabled, monkeypatch):
     def fail(flow, auth_response):
         raise ValueError("invalid_grant")
