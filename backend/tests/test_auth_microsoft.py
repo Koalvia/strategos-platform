@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.domains.auth import microsoft
 from app.domains.auth.models import User
 
+STATUS_URL = "/api/v1/auth/sso"
 LOGIN_URL = "/api/v1/auth/microsoft/login"
 CALLBACK_URL = "/api/v1/auth/microsoft/callback"
 CALLBACK_BODY = {"flow": {"state": "abc"}, "auth_response": {"code": "xyz", "state": "abc"}}
@@ -24,6 +25,14 @@ def sso_enabled(monkeypatch):
 
 def _mock_microsoft_email(monkeypatch, email):
     monkeypatch.setattr(microsoft, "email_from_callback", lambda flow, auth_response: email)
+
+
+def test_sso_status_reflects_the_flag(client, monkeypatch):
+    monkeypatch.setattr(settings, "MS_SSO_ENABLED", True)
+    assert client.get(STATUS_URL).json() == {"microsoft": True}
+
+    monkeypatch.setattr(settings, "MS_SSO_ENABLED", False)
+    assert client.get(STATUS_URL).json() == {"microsoft": False}
 
 
 def test_login_start_returns_authorization_url(client, sso_enabled, monkeypatch):

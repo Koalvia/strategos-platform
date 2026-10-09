@@ -40,6 +40,12 @@ def login(user_data: schemas.UserLogin, response: Response, db: Session = Depend
     return token_data
 
 
+@router.get("/sso", response_model=schemas.SsoStatus)
+def sso_status():
+    """Tell the login page which SSO providers are enabled."""
+    return {"microsoft": settings.MS_SSO_ENABLED}
+
+
 def _require_sso_enabled():
     if not settings.MS_SSO_ENABLED:
         raise HTTPException(status_code=404, detail="Not found")

@@ -17,18 +17,23 @@ const SSO_ERRORS: Record<string, string> = {
   sso_failed: "Microsoft sign-in failed. Please try again.",
 }
 
-const SSO_ENABLED = process.env.NEXT_PUBLIC_MS_SSO_ENABLED === "true"
-
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [ssoEnabled, setSsoEnabled] = useState(false)
 
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get("error")
     if (code && SSO_ERRORS[code]) setError(SSO_ERRORS[code])
+
+    // The backend owns the flag, so it works without rebuilding the frontend.
+    fetch("/api/auth/sso")
+      .then((res) => res.json())
+      .then((data) => setSsoEnabled(Boolean(data.microsoft)))
+      .catch(() => setSsoEnabled(false))
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -102,7 +107,7 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Signing in..." : "Sign in"}
             </Button>
-            {SSO_ENABLED && (
+            {ssoEnabled && (
               <Button
                 type="button"
                 variant="outline"
